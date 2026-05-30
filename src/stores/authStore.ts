@@ -46,7 +46,9 @@ interface AuthState {
   updateCredentials: (username: string, password: string) => void;
 }
 
-const authConfig = loadAuthConfig();
+function getCurrentAuthConfig(): AuthConfig {
+  return loadAuthConfig();
+}
 
 export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem('boxsync_token'),
@@ -54,7 +56,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   showPasswordChangeModal: false,
 
   login: async (username: string, password: string) => {
-    if (username === authConfig.username && password === authConfig.password) {
+    const currentConfig = getCurrentAuthConfig();
+    if (username === currentConfig.username && password === currentConfig.password) {
       const demoToken = 'demo-jwt-token-' + Date.now();
       localStorage.setItem('boxsync_token', demoToken);
       const isDefault = username === 'admin' && password === 'admin123';
