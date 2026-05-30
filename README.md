@@ -56,9 +56,77 @@ npm run dev
 
 **步骤 1：准备部署文件**
 
-在本地电脑创建以下两个文件：
+在本地电脑创建一个文件夹（如 `boxsync-deploy`），并在该文件夹内准备以下文件：
+
+**文件清单：**
+
+| 文件名 | 说明 | 是否必须 |
+|--------|------|----------|
+| `docker-compose.yml` | Docker Compose 配置文件 | 必须 |
+| `Dockerfile` | 自定义构建镜像（如不使用预构建镜像） | 可选 |
+| `config/` | 配置数据目录（首次部署为空文件夹即可） | 必须 |
+
+**操作步骤：**
+
+1. 创建项目文件夹：
+   ```bash
+   mkdir boxsync-deploy
+   cd boxsync-deploy
+   ```
+
+2. 创建空的配置目录：
+   ```bash
+   mkdir config
+   ```
+
+3. 将下面的 `docker-compose.yml` 内容保存到该文件夹中
 
 **`docker-compose.yml`**
+
+提供三种部署方式，根据你的需求选择：
+
+**A. 使用 GitHub 仓库直接构建（推荐，无需本地准备代码）**
+
+直接从 GitHub 仓库拉取代码并构建镜像，适合快速部署。
+
+```yaml
+version: '3.8'
+
+services:
+  boxsync:
+    build:
+      context: https://github.com/hein1225/BoxSync.git#main
+      dockerfile: Dockerfile
+    container_name: boxsync
+    ports:
+      - "9390:9390"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SERVER_PORT=9390
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: boxsync-redis
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+```
+
+> **说明：** `context: https://github.com/hein1225/BoxSync.git#main` 表示从 GitHub 仓库的 `main` 分支构建。如需指定其他分支，将 `#main` 改为对应分支名。
+
+**B. Bridge 模式（使用预构建镜像）**
+
+适用于已有构建好的镜像，或从 Docker Hub 拉取镜像。
 
 ```yaml
 version: '3.8'
@@ -91,7 +159,45 @@ volumes:
   redis-data:
 ```
 
-**`Dockerfile`**（如需自定义构建）
+**C. Host 网络模式**
+
+适用于需要直接使用宿主机网络的情况（如端口冲突、需要获取真实客户端 IP 等）。
+
+```yaml
+version: '3.8'
+
+services:
+  boxsync:
+    image: boxsync:latest
+    container_name: boxsync
+    network_mode: host
+    environment:
+      - REDIS_URL=redis://localhost:6379
+      - SERVER_PORT=9390
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin123
+    volumes:
+      - ./config:/app/config
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: boxsync-redis
+    network_mode: host
+    volumes:
+      - ./redis-data:/data
+    restart: unless-stopped
+```
+
+> **Host 模式注意事项：**
+> - 无需配置 `ports` 映射，服务直接使用宿主机的 9390 端口
+> - Redis 连接地址需改为 `redis://localhost:6379`（因为容器共享宿主机网络）
+> - 部分 NAS（如群晖）的 Docker 套件可能不支持 host 模式，请使用 Bridge 模式
+> - 如果 9390 端口被占用，请修改 `SERVER_PORT` 为其他端口
+
+**`Dockerfile`**（如需自定义构建或 GitHub 构建失败时参考）
 
 ```dockerfile
 FROM node:18-alpine
@@ -106,9 +212,26 @@ CMD ["node", "dist/server.js"]
 
 **步骤 2：上传文件到 NAS**
 
+需要上传的文件和文件夹：
+
+```
+boxsync-deploy/
+├── docker-compose.yml    # 必须上传
+├── Dockerfile            # 如使用自定义构建则上传
+└── config/               # 必须上传（空文件夹即可）
+```
+
+**上传步骤（以飞牛 NAS 为例）：**
+
 1. 登录飞牛 NAS 管理界面
-2. 打开文件管理器，进入 Docker 共享文件夹（如 `/docker/boxsync`）
-3. 上传 `docker-compose.yml` 文件到该目录
+2. 打开文件管理器，进入 Docker 共享文件夹（如 `/docker`）
+3. 新建文件夹 `boxsync`
+4. 将本地 `boxsync-deploy` 文件夹内的以下内容上传到 `/docker/boxsync/`：
+   - `docker-compose.yml`
+   - `Dockerfile`（如需要自定义构建）
+   - `config/` 文件夹（空文件夹即可，用于持久化配置）
+
+> **注意：** 如果使用 Bridge 模式，`config` 文件夹会在首次运行时自动创建；但建议提前创建以确保权限正确。
 
 **步骤 3：通过 SSH 或终端部署**
 
