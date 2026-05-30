@@ -90,8 +90,6 @@ npm run dev
 直接从 GitHub 仓库拉取代码并构建镜像，适合快速部署。
 
 ```yaml
-version: '3.8'
-
 services:
   boxsync:
     build:
@@ -129,11 +127,9 @@ volumes:
 适用于已有构建好的镜像，或从 Docker Hub 拉取镜像。
 
 ```yaml
-version: '3.8'
-
 services:
   boxsync:
-    image: boxsync:latest
+    image: hyc5069/boxsync:latest
     container_name: boxsync
     ports:
       - "9390:9390"
@@ -164,11 +160,9 @@ volumes:
 适用于需要直接使用宿主机网络的情况（如端口冲突、需要获取真实客户端 IP 等）。
 
 ```yaml
-version: '3.8'
-
 services:
   boxsync:
-    image: boxsync:latest
+    image: hyc5069/boxsync:latest
     container_name: boxsync
     network_mode: host
     environment:
@@ -488,7 +482,7 @@ docker run -d \
   -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=your-secure-password \
   -v $(pwd)/config:/app/config \
-  boxsync:latest
+  hyc5069/boxsync:latest
 ```
 
 ## 配置说明
