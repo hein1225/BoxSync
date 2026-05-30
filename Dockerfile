@@ -12,6 +12,12 @@ RUN npm ci
 # 复制源代码
 COPY . .
 
+# 设置构建时的环境变量（从 Docker 构建参数传入）
+ARG ADMIN_USERNAME=admin
+ARG ADMIN_PASSWORD=admin123
+ENV ADMIN_USERNAME=${ADMIN_USERNAME}
+ENV ADMIN_PASSWORD=${ADMIN_PASSWORD}
+
 # 构建前端
 RUN npm run build
 

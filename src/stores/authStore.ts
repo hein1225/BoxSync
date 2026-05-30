@@ -7,6 +7,17 @@ interface AuthConfig {
   password: string;
 }
 
+function getDefaultAuthConfig(): AuthConfig {
+  const envUsername = import.meta.env.VITE_ADMIN_USERNAME;
+  const envPassword = import.meta.env.VITE_ADMIN_PASSWORD;
+
+  if (envUsername && envPassword) {
+    return { username: envUsername, password: envPassword };
+  }
+
+  return { username: 'admin', password: 'admin123' };
+}
+
 function loadAuthConfig(): AuthConfig {
   try {
     const saved = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -14,7 +25,7 @@ function loadAuthConfig(): AuthConfig {
   } catch {
     // ignore
   }
-  return { username: 'admin', password: 'admin123' };
+  return getDefaultAuthConfig();
 }
 
 function saveAuthConfig(config: AuthConfig) {
