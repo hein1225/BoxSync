@@ -43,7 +43,7 @@ async function startServer() {
     app.use('/api/health', healthRoutes);
 
     // Serve static files (frontend build)
-    const distPath = path.join(__dirname, '../dist');
+    const distPath = path.join(__dirname, '..');
     app.use(express.static(distPath));
 
     // SPA fallback
