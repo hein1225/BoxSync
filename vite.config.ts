@@ -15,6 +15,14 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_ADMIN_USERNAME': JSON.stringify(env.ADMIN_USERNAME || 'admin'),
       'import.meta.env.VITE_ADMIN_PASSWORD': JSON.stringify(env.ADMIN_PASSWORD || 'admin123'),
     },
+    server: {
+      proxy: {
+        '/api': {
+          target: 'http://localhost:9390',
+          changeOrigin: true,
+        },
+      },
+    },
     plugins: [
       react({
         babel: {

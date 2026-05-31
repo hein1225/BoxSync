@@ -15,7 +15,8 @@ export default function Dashboard() {
   const [redisInfo, setRedisInfo] = useState<{
     status: 'connected' | 'disconnected' | 'checking';
     address: string;
-  }>({ status: 'checking', address: '检测中...' });
+    mode: string;
+  }>({ status: 'checking', address: '检测中...', mode: '' });
 
   useEffect(() => {
     const checkRedis = async () => {
@@ -30,20 +31,24 @@ export default function Dashboard() {
 
         if (response.ok) {
           const data = await response.json().catch(() => ({}));
+          const redis = data.redis || {};
           setRedisInfo({
-            status: 'connected',
-            address: data.redis || 'localhost:6379',
+            status: redis.connected ? 'connected' : 'disconnected',
+            address: redis.url || 'localhost:6379',
+            mode: redis.mode || '',
           });
         } else {
           setRedisInfo({
             status: 'disconnected',
             address: '未连接',
+            mode: '',
           });
         }
       } catch {
         setRedisInfo({
           status: 'disconnected',
           address: '未连接',
+          mode: '',
         });
       }
     };
@@ -251,7 +256,7 @@ export default function Dashboard() {
               {redisInfo.status === 'connected' ? '已连接' : redisInfo.status === 'disconnected' ? '未连接' : '检测中...'}
             </p>
             <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
-              {redisInfo.address}
+              {redisInfo.address}{redisInfo.mode ? ` (${redisInfo.mode})` : ''}
             </p>
           </div>
         </div>

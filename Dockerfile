@@ -21,19 +21,26 @@ ENV ADMIN_PASSWORD=${ADMIN_PASSWORD}
 # 构建前端
 RUN npm run build
 
+# 构建后端
+RUN npm run build:server
+
 # 生产阶段
 FROM node:18-alpine
 
 WORKDIR /app
 
-# 安装 serve 用于提供静态文件
-RUN npm install -g serve
-
-# 从构建阶段复制构建产物
+# 复制前端构建产物
 COPY --from=builder /app/dist ./dist
+
+# 复制后端构建产物
+COPY --from=builder /app/dist/server ./dist/server
+
+# 复制 package.json 和 node_modules（生产依赖）
+COPY --from=builder /app/package*.json ./
+RUN npm ci --production
 
 # 暴露端口
 EXPOSE 9390
 
-# 启动服务
-CMD ["serve", "-s", "dist", "-l", "9390"]
+# 启动后端服务
+CMD ["node", "dist/server/index.js"]
