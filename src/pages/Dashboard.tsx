@@ -1,70 +1,73 @@
-import { Users, Activity, Cpu, HardDrive, Database, TrendingUp, AlertCircle, Clock } from 'lucide-react';
+import { Users, Database, Layers, Clock, TrendingUp, Activity } from 'lucide-react';
 import StatCard from '@/components/StatCard';
-import CpuRing from '@/components/CpuRing';
-import MemoryChart from '@/components/MemoryChart';
-import FileTree from '@/components/FileTree';
-import type { FileTreeNode } from '@/types';
-
-const memoryData = [20, 35, 28, 45, 32, 50, 38, 55, 42, 60, 48];
-const memoryLabels = ['0:1', '0:5', '0:10', '0:15', '0:17', '0:20', '0:25', '0:27', '0:30', '0:35', '0:39'];
-
-const networkData = [120, 150, 180, 140, 200, 170, 220, 190, 250, 210, 280, 240];
-const networkLabels = ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
-
-const fileTreeData: FileTreeNode[] = [
-  {
-    id: '1',
-    name: 'var/www',
-    type: 'folder',
-    color: 'blue',
-    children: [
-      {
-        id: '2',
-        name: 'boxsync',
-        type: 'folder',
-        color: 'green',
-        children: [
-          { id: '3', name: 'user_data', type: 'folder', color: 'purple' },
-          { id: '4', name: 'config.json', type: 'file', color: 'yellow' },
-        ],
-      },
-      {
-        id: '5',
-        name: 'logs',
-        type: 'folder',
-        color: 'orange',
-        children: [
-          { id: '6', name: 'access.log', type: 'file', color: 'cyan' },
-          { id: '7', name: 'error.log', type: 'file', color: 'red' },
-        ],
-      },
-      { id: '8', name: 'index.html', type: 'file', color: 'blue' },
-      { id: '9', name: 'app.js', type: 'file', color: 'yellow' },
-    ],
-  },
-  {
-    id: '10',
-    name: 'etc',
-    type: 'folder',
-    color: 'green',
-    children: [
-      { id: '11', name: 'nginx.conf', type: 'file', color: 'cyan' },
-      { id: '12', name: 'redis.conf', type: 'file', color: 'red' },
-    ],
-  },
-  {
-    id: '13',
-    name: 'backup',
-    type: 'folder',
-    color: 'purple',
-    children: [
-      { id: '14', name: '2026-05-29.json', type: 'file', color: 'green' },
-      { id: '15', name: '2026-05-28.json', type: 'file', color: 'green' },
-    ],
-  },
-];
+import { useUserStore } from '@/stores/userStore';
+import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useLogStore } from '@/stores/logStore';
+import { useMemo } from 'react';
 
 export default function Dashboard() {
+  const users = useUserStore((state) => state.users);
+  const partitions = useUserPartitionsStore((state) => state.partitions);
+  const settings = useSettingsStore((state) => state.settings);
+  const logs = useLogStore((state) => state.logs);
+
+  const stats = useMemo(() => {
+    const totalUsers = users.length;
+    const activeUsers = users.filter((u) => u.status === 'active').length;
+    const disabledUsers = totalUsers - activeUsers;
+
+    const totalPartitions = partitions.length;
+    const totalAppPartitions = partitions.reduce(
+      (sum, p) => sum + p.appPartitions.length,
+      0
+    );
+
+    const totalKeyCount = partitions.reduce(
+      (sum, p) =>
+        sum + p.appPartitions.reduce((appSum, a) => appSum + (a.keyCount || 0), 0),
+      0
+    );
+
+    const totalMemoryUsage = partitions.reduce(
+      (sum, p) =>
+        sum + p.appPartitions.reduce((appSum, a) => appSum + (a.memoryUsage || 0), 0),
+      0
+    );
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayLogs = logs.filter((l) => l.timestamp >= today.getTime()).length;
+
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      date.setHours(0, 0, 0, 0);
+      return {
+        label: `${date.getMonth() + 1}/${date.getDate()}`,
+        count: logs.filter(
+          (l) =>
+            l.timestamp >= date.getTime() &&
+            l.timestamp < date.getTime() + 86400000
+        ).length,
+      };
+    });
+
+    return {
+      totalUsers,
+      activeUsers,
+      disabledUsers,
+      totalPartitions,
+      totalAppPartitions,
+      totalKeyCount,
+      totalMemoryUsage,
+      todayLogs,
+      last7Days,
+      maxUsers: settings.maxUsers,
+      maxDataPerUser: settings.maxDataPerUser,
+    };
+  }, [users, partitions, settings, logs]);
+
   return (
     <div className="p-6 space-y-6 animate-fade-in">
       {/* Page Title */}
@@ -74,15 +77,39 @@ export default function Dashboard() {
         </h1>
       </div>
 
-      {/* Stat Cards Row 1 - Core Metrics */}
+      {/* Stat Cards Row 1 - User Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="当前在线" value="128" icon={Users} color="#7c3aed" />
-        <StatCard title="系统负载" value="2.3" icon={Activity} color="#10b981" />
-        <StatCard title="CPU 使用率" value="75%" icon={Cpu} color="#a78bfa" />
-        <StatCard title="磁盘使用" value="345GB/500GB" icon={HardDrive} color="#f59e0b" />
+        <StatCard
+          title="用户总数"
+          value={String(stats.totalUsers)}
+          subtitle={`活跃: ${stats.activeUsers} / 禁用: ${stats.disabledUsers}`}
+          icon={Users}
+          color="#7c3aed"
+        />
+        <StatCard
+          title="存储分区"
+          value={String(stats.totalPartitions)}
+          subtitle={`应用分区: ${stats.totalAppPartitions}`}
+          icon={Database}
+          color="#10b981"
+        />
+        <StatCard
+          title="同步数据键"
+          value={String(stats.totalKeyCount)}
+          subtitle={`总占用: ${(stats.totalMemoryUsage / 1024 / 1024).toFixed(2)} MB`}
+          icon={Layers}
+          color="#a78bfa"
+        />
+        <StatCard
+          title="今日日志"
+          value={String(stats.todayLogs)}
+          subtitle="条操作记录"
+          icon={Activity}
+          color="#f59e0b"
+        />
       </div>
 
-      {/* Stat Cards Row 2 - Monitor Metrics */}
+      {/* Stat Cards Row 2 - Server Config */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div
           className="rounded-2xl p-5 flex items-center gap-4"
@@ -95,11 +122,13 @@ export default function Dashboard() {
             className="w-12 h-12 rounded-xl flex items-center justify-center"
             style={{ backgroundColor: 'rgba(124, 58, 237, 0.2)' }}
           >
-            <Clock className="w-6 h-6" style={{ color: 'var(--accent-purple-light)' }} />
+            <Users className="w-6 h-6" style={{ color: 'var(--accent-purple-light)' }} />
           </div>
           <div>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>系统运行时间</p>
-            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>15天 8小时</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>用户上限</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {stats.totalUsers} / {stats.maxUsers}
+            </p>
           </div>
         </div>
 
@@ -117,8 +146,10 @@ export default function Dashboard() {
             <TrendingUp className="w-6 h-6" style={{ color: 'var(--accent-green)' }} />
           </div>
           <div>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>平均响应时间</p>
-            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>24ms</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>单用户数据上限</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {stats.maxDataPerUser} MB
+            </p>
           </div>
         </div>
 
@@ -131,129 +162,22 @@ export default function Dashboard() {
         >
           <div
             className="w-12 h-12 rounded-xl flex items-center justify-center"
-            style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)' }}
+            style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)' }}
           >
-            <AlertCircle className="w-6 h-6" style={{ color: 'var(--accent-red)' }} />
+            <Clock className="w-6 h-6" style={{ color: '#f59e0b' }} />
           </div>
           <div>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>错误率</p>
-            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>0.12%</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>日志保留天数</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {settings.logRetentionDays} 天
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Main Content Grid */}
+      {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column - CPU & Memory */}
-        <div className="space-y-6">
-          {/* CPU Card */}
-          <div
-            className="rounded-2xl p-6"
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                CPU
-              </h2>
-              <span
-                className="text-xs px-2 py-1 rounded-full"
-                style={{
-                  backgroundColor: 'rgba(124, 58, 237, 0.2)',
-                  color: 'var(--accent-purple-light)',
-                }}
-              >
-                实时
-              </span>
-            </div>
-
-            <div className="flex items-center gap-8">
-              <CpuRing percentage={75} size={140} strokeWidth={10} />
-
-              <div className="space-y-3 flex-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent-purple)' }} />
-                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      CPU使用率
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    75%
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent-green)' }} />
-                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      内存占用
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    4.2GB
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#f59e0b' }} />
-                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                      磁盘空间
-                    </span>
-                  </div>
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    345GB/500GB
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Memory Chart */}
-          <div
-            className="rounded-2xl p-6"
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                内存占用
-              </h2>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent-green)' }} />
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>可用</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent-purple-light)' }} />
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>已用</span>
-                </div>
-              </div>
-            </div>
-            <MemoryChart data={memoryData} labels={memoryLabels} />
-          </div>
-
-          {/* Network Chart */}
-          <div
-            className="rounded-2xl p-6"
-            style={{
-              backgroundColor: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-              网络流量 (MB/s)
-            </h2>
-            <MemoryChart data={networkData} labels={networkLabels} />
-          </div>
-        </div>
-
-        {/* Right Column - File Tree */}
+        {/* User Status Distribution */}
         <div
           className="rounded-2xl p-6"
           style={{
@@ -261,15 +185,134 @@ export default function Dashboard() {
             border: '1px solid var(--border-color)',
           }}
         >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              根目录 /var/www
-            </h2>
-            <Database className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+            用户状态分布
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between mb-1">
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>活跃用户</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {stats.activeUsers} / {stats.totalUsers}
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full" style={{ backgroundColor: 'var(--bg-input)' }}>
+                <div
+                  className="h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${stats.totalUsers > 0 ? (stats.activeUsers / stats.totalUsers) * 100 : 0}%`,
+                    backgroundColor: '#10b981',
+                  }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between mb-1">
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>禁用用户</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {stats.disabledUsers} / {stats.totalUsers}
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full" style={{ backgroundColor: 'var(--bg-input)' }}>
+                <div
+                  className="h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${stats.totalUsers > 0 ? (stats.disabledUsers / stats.totalUsers) * 100 : 0}%`,
+                    backgroundColor: '#ef4444',
+                  }}
+                />
+              </div>
+            </div>
           </div>
-          <FileTree data={fileTreeData} />
+        </div>
+
+        {/* Recent Activity */}
+        <div
+          className="rounded-2xl p-6"
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+            近7天操作记录
+          </h2>
+          <div className="space-y-3">
+            {stats.last7Days.map((day, index) => (
+              <div key={index} className="flex items-center gap-3">
+                <span className="text-sm w-16" style={{ color: 'var(--text-secondary)' }}>
+                  {day.label}
+                </span>
+                <div className="flex-1 h-6 rounded-lg relative" style={{ backgroundColor: 'var(--bg-input)' }}>
+                  <div
+                    className="absolute left-0 top-0 h-full rounded-lg transition-all duration-300"
+                    style={{
+                      width: `${Math.max(
+                        5,
+                        (day.count / Math.max(...stats.last7Days.map((d) => d.count), 1)) * 100
+                      )}%`,
+                      backgroundColor: 'var(--accent-purple)',
+                      opacity: 0.7 + index * 0.05,
+                    }}
+                  />
+                  <span
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {day.count}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* App Partitions Overview */}
+      {partitions.length > 0 && (
+        <div
+          className="rounded-2xl p-6"
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+            应用分区概览
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {partitions.map((partition) => (
+              <div
+                key={partition.userId}
+                className="rounded-xl p-4"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {partition.username}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(124, 58, 237, 0.2)', color: 'var(--accent-purple-light)' }}>
+                    {partition.appPartitions.length} 个应用
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {partition.appPartitions.map((app) => (
+                    <div key={app.appId} className="flex justify-between text-xs">
+                      <span style={{ color: 'var(--text-secondary)' }}>{app.appName}</span>
+                      <span style={{ color: 'var(--text-primary)' }}>
+                        {app.keyCount || 0} 键
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

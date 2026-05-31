@@ -17,7 +17,6 @@ import { useAppStore } from '@/stores/appStore';
 
 const menuItems = [
   { key: 'dashboard', label: '概览', icon: LayoutDashboard, path: '/admin/dashboard' },
-  { key: 'files', label: '文件', icon: HardDrive, path: '/admin/files' },
   { key: 'users', label: '用户', icon: Users, path: '/admin/users' },
   { key: 'storage', label: '存储', icon: Database, path: '/admin/storage' },
   { key: 'backup', label: '备份', icon: FileText, path: '/admin/backup' },

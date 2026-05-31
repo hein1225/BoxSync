@@ -3,11 +3,12 @@ import type { LucideIcon } from 'lucide-react';
 interface StatCardProps {
   title: string;
   value: string | number;
+  subtitle?: string;
   icon: LucideIcon;
   color?: string;
 }
 
-export default function StatCard({ title, value, icon: Icon, color = 'var(--accent-purple)' }: StatCardProps) {
+export default function StatCard({ title, value, subtitle, icon: Icon, color = 'var(--accent-purple)' }: StatCardProps) {
   return (
     <div
       className="rounded-2xl p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-lg"
@@ -29,6 +30,11 @@ export default function StatCard({ title, value, icon: Icon, color = 'var(--acce
         <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
           {value}
         </p>
+        {subtitle && (
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {subtitle}
+          </p>
+        )}
       </div>
     </div>
   );

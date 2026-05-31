@@ -11,7 +11,6 @@ import StorageView from "@/pages/StorageView";
 import BackupRestore from "@/pages/BackupRestore";
 import LogView from "@/pages/LogView";
 import About from "@/pages/About";
-import Files from "@/pages/Files";
 import Settings from "@/pages/Settings";
 
 function AdminLayout() {
@@ -22,7 +21,6 @@ function AdminLayout() {
         <PasswordChangeModal />
         <Routes>
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="files" element={<Files />} />
           <Route path="users" element={<UserManage />} />
           <Route path="storage" element={<StorageView />} />
           <Route path="backup" element={<BackupRestore />} />
