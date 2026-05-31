@@ -11,6 +11,7 @@ export interface ServerSettings {
   maxDataPerUser: number;
   requireAuth: boolean;
   allowRegistration: boolean;
+  sessionTimeout: number;
 }
 
 const STORAGE_KEY = 'boxsync_server_settings';
@@ -26,6 +27,7 @@ const defaultSettings: ServerSettings = {
   maxDataPerUser: 100,
   requireAuth: true,
   allowRegistration: false,
+  sessionTimeout: 30,
 };
 
 function loadSettings(): ServerSettings {

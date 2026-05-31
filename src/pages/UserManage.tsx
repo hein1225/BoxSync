@@ -12,6 +12,10 @@ export default function UserManage() {
   const [showPasswordField, setShowPasswordField] = useState(false);
   const [formData, setFormData] = useState({ username: '', password: '', role: 'user' as 'admin' | 'user' });
 
+  const adminCount = users.filter((u) => u.role === 'admin').length;
+
+  const isLastAdmin = (user: User) => user.role === 'admin' && adminCount <= 1;
+
   const handleCreate = () => {
     setEditingUser(null);
     setShowPasswordField(true);
@@ -26,13 +30,12 @@ export default function UserManage() {
     setShowModal(true);
   };
 
-  const handleDelete = (userId: string) => {
-    if (confirm('确定要删除该用户吗？此操作不可恢复。')) {
-      deleteUser(userId);
-    }
-  };
-
   const handleToggleStatus = (userId: string) => {
+    const user = users.find((u) => u.userId === userId);
+    if (user?.role === 'admin' && adminCount <= 1) {
+      alert('不能禁用唯一的管理员账户');
+      return;
+    }
     toggleStatus(userId);
   };
 
@@ -65,9 +68,17 @@ export default function UserManage() {
   };
 
   const handleDeleteUser = (userId: string) => {
+    const user = users.find((u) => u.userId === userId);
+    if (user?.role === 'admin' && adminCount <= 1) {
+      alert('不能删除唯一的管理员账户');
+      return;
+    }
     if (confirm('确定要删除该用户吗？此操作将同时删除该用户的所有存储数据，不可恢复。')) {
-      deleteUser(userId);
-      deletePartition(userId);
+      // Use setTimeout to avoid state update during render
+      setTimeout(() => {
+        deleteUser(userId);
+        deletePartition(userId);
+      }, 0);
     }
   };
 
@@ -153,22 +164,24 @@ export default function UserManage() {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center justify-end gap-2">
-                    <button
-                      onClick={() => handleToggleStatus(user.userId)}
-                      className="p-2 rounded-lg transition-all duration-150"
-                      style={{ color: 'var(--text-secondary)' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                        e.currentTarget.style.color = 'var(--accent-green)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                        e.currentTarget.style.color = 'var(--text-secondary)';
-                      }}
-                      title={user.status === 'active' ? '禁用' : '启用'}
-                    >
-                      {user.status === 'active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                    </button>
+                    {!isLastAdmin(user) && (
+                      <button
+                        onClick={() => handleToggleStatus(user.userId)}
+                        className="p-2 rounded-lg transition-all duration-150"
+                        style={{ color: 'var(--text-secondary)' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                          e.currentTarget.style.color = 'var(--accent-green)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.color = 'var(--text-secondary)';
+                        }}
+                        title={user.status === 'active' ? '禁用' : '启用'}
+                      >
+                        {user.status === 'active' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleEdit(user)}
                       className="p-2 rounded-lg transition-all duration-150"
@@ -208,22 +221,24 @@ export default function UserManage() {
                     >
                       <Database className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => handleDeleteUser(user.userId)}
-                      className="p-2 rounded-lg transition-all duration-150"
-                      style={{ color: 'var(--text-secondary)' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
-                        e.currentTarget.style.color = 'var(--accent-red)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'transparent';
-                        e.currentTarget.style.color = 'var(--text-secondary)';
-                      }}
-                      title="删除"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!isLastAdmin(user) && (
+                      <button
+                        onClick={() => handleDeleteUser(user.userId)}
+                        className="p-2 rounded-lg transition-all duration-150"
+                        style={{ color: 'var(--text-secondary)' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                          e.currentTarget.style.color = 'var(--accent-red)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                          e.currentTarget.style.color = 'var(--text-secondary)';
+                        }}
+                        title="删除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

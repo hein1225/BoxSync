@@ -1,14 +1,33 @@
-import { Server, Database, Shield, Clock, Code } from 'lucide-react';
+import { Server, Shield, Clock, Code } from 'lucide-react';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 export default function About() {
+  const settings = useSettingsStore((state) => state.settings);
+
   const serverInfo = [
-    { label: '服务器名称', value: 'BoxSync', icon: Server },
+    { label: '服务器名称', value: settings.serverName, icon: Server },
     { label: '当前版本', value: 'v1.0.0', icon: Code },
     { label: 'API 版本', value: 'v1', icon: Code },
     { label: '构建日期', value: '2026-05-29', icon: Clock },
-    { label: 'Redis 状态', value: '已连接', icon: Database, status: 'success' as const },
-    { label: '安全策略', value: '已启用', icon: Shield, status: 'success' as const },
+    {
+      label: '安全策略',
+      value: settings.requireAuth ? '已启用' : '已禁用',
+      icon: Shield,
+      status: settings.requireAuth ? 'success' as const : 'warning' as const,
+    },
   ];
+
+  const getStatusColor = (status?: 'success' | 'warning') => {
+    if (status === 'success') return 'var(--accent-green)';
+    if (status === 'warning') return '#f59e0b';
+    return 'var(--accent-purple-light)';
+  };
+
+  const getStatusBg = (status?: 'success' | 'warning') => {
+    if (status === 'success') return 'rgba(16, 185, 129, 0.2)';
+    if (status === 'warning') return 'rgba(245, 158, 11, 0.2)';
+    return 'rgba(124, 58, 237, 0.2)';
+  };
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
@@ -28,21 +47,11 @@ export default function About() {
           >
             <div
               className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                backgroundColor:
-                  item.status === 'success'
-                    ? 'rgba(16, 185, 129, 0.2)'
-                    : 'rgba(124, 58, 237, 0.2)',
-              }}
+              style={{ backgroundColor: getStatusBg(item.status) }}
             >
               <item.icon
                 className="w-6 h-6"
-                style={{
-                  color:
-                    item.status === 'success'
-                      ? 'var(--accent-green)'
-                      : 'var(--accent-purple-light)',
-                }}
+                style={{ color: getStatusColor(item.status) }}
               />
             </div>
             <div>
@@ -95,6 +104,29 @@ export default function About() {
               </span>
             </div>
           ))}
+        </div>
+
+        <div
+          className="rounded-xl p-4 mt-4 flex items-center gap-4"
+          style={{
+            backgroundColor: 'rgba(124, 58, 237, 0.08)',
+            border: '1px solid rgba(124, 58, 237, 0.2)',
+          }}
+        >
+          <div className="flex-1">
+            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              开源仓库
+            </p>
+            <a
+              href="https://github.com/hein1225/BoxSync"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm hover:underline"
+              style={{ color: 'var(--accent-purple-light)' }}
+            >
+              https://github.com/hein1225/BoxSync
+            </a>
+          </div>
         </div>
       </div>
     </div>

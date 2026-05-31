@@ -1,17 +1,43 @@
-import { useState } from 'react';
-import { Download, Upload, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Download, Upload, AlertTriangle, CheckCircle, FileJson } from 'lucide-react';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useUserStore } from '@/stores/userStore';
+import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
+import { useLogStore } from '@/stores/logStore';
+
+interface BackupData {
+  exportTime: string;
+  version: string;
+  data: {
+    settings?: Record<string, unknown>;
+    users?: unknown[];
+    partitions?: unknown[];
+    logs?: unknown[];
+  };
+}
 
 export default function BackupRestore() {
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [importSuccess, setImportSuccess] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [pendingFile, setPendingFile] = useState<BackupData | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const settings = useSettingsStore((state) => state.settings);
+  const users = useUserStore((state) => state.users);
+  const partitions = useUserPartitionsStore((state) => state.partitions);
+  const logs = useLogStore((state) => state.logs);
 
   const handleExport = () => {
-    const backupData = {
+    const backupData: BackupData = {
       exportTime: new Date().toISOString(),
       version: '1.0.0',
       data: {
-        'boxsync:meta:version': { version: '1.0.0', buildDate: '2026-05-29' },
-        'boxsync:user:admin': { username: 'admin', role: 'admin' },
+        settings: { ...settings },
+        users: [...users],
+        partitions: [...partitions],
+        logs: [...logs],
       },
     };
 
@@ -27,13 +53,74 @@ export default function BackupRestore() {
     setTimeout(() => setExportSuccess(false), 3000);
   };
 
-  const handleImport = () => {
-    setShowImportConfirm(true);
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content) as BackupData;
+
+        if (!parsed.data) {
+          setImportError('无效的备份文件格式');
+          return;
+        }
+
+        setPendingFile(parsed);
+        setImportError('');
+        setShowImportConfirm(true);
+      } catch {
+        setImportError('文件解析失败，请确保上传的是有效的 JSON 备份文件');
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
   };
 
   const confirmImport = () => {
+    if (!pendingFile) return;
+
+    try {
+      const { data } = pendingFile;
+
+      if (data.settings) {
+        localStorage.setItem('boxsync_server_settings', JSON.stringify(data.settings));
+      }
+      if (data.users) {
+        localStorage.setItem('boxsync_users', JSON.stringify(data.users));
+      }
+      if (data.partitions) {
+        localStorage.setItem('boxsync_user_partitions', JSON.stringify(data.partitions));
+      }
+      if (data.logs) {
+        localStorage.setItem('boxsync_logs', JSON.stringify(data.logs));
+      }
+
+      setShowImportConfirm(false);
+      setPendingFile(null);
+      setImportSuccess(true);
+      setTimeout(() => setImportSuccess(false), 3000);
+
+      // Reload page to apply imported data
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch {
+      setImportError('导入过程中发生错误');
+    }
+  };
+
+  const cancelImport = () => {
     setShowImportConfirm(false);
-    alert('导入功能需要在后端集成后使用');
+    setPendingFile(null);
   };
 
   return (
@@ -63,7 +150,7 @@ export default function BackupRestore() {
                 导出备份
               </h2>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                将数据库导出为 JSON 文件
+                将所有数据导出为 JSON 文件
               </p>
             </div>
           </div>
@@ -75,7 +162,7 @@ export default function BackupRestore() {
               color: 'var(--text-secondary)',
             }}
           >
-            导出文件包含所有用户数据、配置信息和系统元数据。建议定期备份以确保数据安全。
+            导出文件包含所有用户数据、配置信息、存储分区和操作日志。建议定期备份以确保数据安全。
           </div>
 
           <button
@@ -139,21 +226,49 @@ export default function BackupRestore() {
             </div>
           </div>
 
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+
           <button
-            onClick={handleImport}
+            onClick={handleImportClick}
             className="w-full py-3 rounded-xl font-medium text-white transition-all duration-200 hover:opacity-90 flex items-center justify-center gap-2"
             style={{
               background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%)',
             }}
           >
             <Upload className="w-5 h-5" />
-            导入备份文件
+            选择备份文件
           </button>
+
+          {importError && (
+            <div
+              className="flex items-center gap-2 text-sm py-2 px-3 rounded-lg"
+              style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--accent-red)' }}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              {importError}
+            </div>
+          )}
+
+          {importSuccess && (
+            <div
+              className="flex items-center gap-2 text-sm py-2 px-3 rounded-lg"
+              style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: 'var(--accent-green)' }}
+            >
+              <CheckCircle className="w-4 h-4" />
+              导入成功！页面即将刷新
+            </div>
+          )}
         </div>
       </div>
 
       {/* Import Confirm Modal */}
-      {showImportConfirm && (
+      {showImportConfirm && pendingFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div
             className="w-full max-w-md p-6 rounded-2xl animate-fade-in"
@@ -163,17 +278,61 @@ export default function BackupRestore() {
             }}
           >
             <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle className="w-6 h-6" style={{ color: 'var(--accent-red)' }} />
-              <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                确认导入
-              </h2>
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)' }}
+              >
+                <FileJson className="w-5 h-5" style={{ color: '#f59e0b' }} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                  确认导入
+                </h2>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  备份时间: {new Date(pendingFile.exportTime).toLocaleString('zh-CN')}
+                </p>
+              </div>
             </div>
-            <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-              此操作将覆盖当前所有数据，是否继续？建议先导出当前数据作为备份。
+
+            <div className="space-y-2 mb-6">
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                检测到以下数据：
+              </p>
+              <div className="space-y-1">
+                {pendingFile.data.settings && (
+                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                    <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                    系统配置
+                  </div>
+                )}
+                {pendingFile.data.users && (
+                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                    <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                    用户数据 ({(pendingFile.data.users as unknown[]).length} 个用户)
+                  </div>
+                )}
+                {pendingFile.data.partitions && (
+                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                    <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                    存储分区 ({(pendingFile.data.partitions as unknown[]).length} 个分区)
+                  </div>
+                )}
+                {pendingFile.data.logs && (
+                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                    <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                    操作日志 ({(pendingFile.data.logs as unknown[]).length} 条记录)
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <p className="text-sm mb-6" style={{ color: 'var(--accent-red)' }}>
+              此操作将覆盖当前所有数据，是否继续？
             </p>
+
             <div className="flex gap-3">
               <button
-                onClick={() => setShowImportConfirm(false)}
+                onClick={cancelImport}
                 className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all duration-200"
                 style={{
                   backgroundColor: 'var(--bg-input)',

@@ -13,7 +13,7 @@ export default function Register() {
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const serverUrl = window.location.origin;
+  const serverUrl = `${window.location.origin}/api`;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

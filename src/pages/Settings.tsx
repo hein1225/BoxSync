@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import {
-  Settings as SettingsIcon,
   Save,
   RotateCcw,
   Download,
@@ -8,10 +7,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Server,
-  Clock,
   Users,
   Database,
-  Shield,
   FileText,
   Trash2,
   UserPlus,
@@ -70,6 +67,8 @@ export default function Settings() {
     localStorage.removeItem('boxsync_logs');
     localStorage.removeItem('boxsync_server_settings');
     localStorage.removeItem('boxsync_token');
+    localStorage.removeItem('boxsync_session_time');
+    localStorage.removeItem('boxsync_partitions');
     setShowClearAllConfirm(false);
     alert('所有本地数据已清空！页面将刷新恢复默认状态。');
     window.location.reload();
@@ -309,6 +308,23 @@ export default function Settings() {
                 className={inputClass}
                 style={inputStyle}
               />
+            </div>
+            <div>
+              <label className="block text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+                登录超时时间 (分钟)
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={1440}
+                value={localSettings.sessionTimeout}
+                onChange={(e) => handleChange('sessionTimeout', Math.max(5, parseInt(e.target.value) || 30))}
+                className={inputClass}
+                style={inputStyle}
+              />
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                无操作超过此时长将自动登出，范围 5-1440 分钟
+              </p>
             </div>
             <div className="flex items-end">
               <label className="flex items-center gap-3 cursor-pointer">

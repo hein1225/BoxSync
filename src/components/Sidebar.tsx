@@ -2,7 +2,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  HardDrive,
   Database,
   FileText,
   Info,

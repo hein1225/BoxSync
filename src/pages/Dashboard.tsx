@@ -1,16 +1,57 @@
-import { Users, Database, Layers, Clock, TrendingUp, Activity } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Users, Database, Layers, Clock, TrendingUp, Activity, Server } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { useUserStore } from '@/stores/userStore';
 import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useLogStore } from '@/stores/logStore';
-import { useMemo } from 'react';
 
 export default function Dashboard() {
   const users = useUserStore((state) => state.users);
   const partitions = useUserPartitionsStore((state) => state.partitions);
   const settings = useSettingsStore((state) => state.settings);
   const logs = useLogStore((state) => state.logs);
+
+  const [redisInfo, setRedisInfo] = useState<{
+    status: 'connected' | 'disconnected' | 'checking';
+    address: string;
+  }>({ status: 'checking', address: '检测中...' });
+
+  useEffect(() => {
+    const checkRedis = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const response = await fetch('/api/health', {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json().catch(() => ({}));
+          setRedisInfo({
+            status: 'connected',
+            address: data.redis || 'localhost:6379',
+          });
+        } else {
+          setRedisInfo({
+            status: 'disconnected',
+            address: '未连接',
+          });
+        }
+      } catch {
+        setRedisInfo({
+          status: 'disconnected',
+          address: '未连接',
+        });
+      }
+    };
+
+    checkRedis();
+    const interval = setInterval(checkRedis, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const stats = useMemo(() => {
     const totalUsers = users.length;
@@ -110,7 +151,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat Cards Row 2 - Server Config */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
           className="rounded-2xl p-5 flex items-center gap-4"
           style={{
@@ -170,6 +211,47 @@ export default function Dashboard() {
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>日志保留天数</p>
             <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
               {settings.logRetentionDays} 天
+            </p>
+          </div>
+        </div>
+
+        <div
+          className="rounded-2xl p-5 flex items-center gap-4"
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{
+              backgroundColor:
+                redisInfo.status === 'connected'
+                  ? 'rgba(16, 185, 129, 0.2)'
+                  : redisInfo.status === 'disconnected'
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : 'rgba(124, 58, 237, 0.2)',
+            }}
+          >
+            <Server
+              className="w-6 h-6"
+              style={{
+                color:
+                  redisInfo.status === 'connected'
+                    ? 'var(--accent-green)'
+                    : redisInfo.status === 'disconnected'
+                    ? 'var(--accent-red)'
+                    : 'var(--accent-purple-light)',
+              }}
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Redis 状态</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+              {redisInfo.status === 'connected' ? '已连接' : redisInfo.status === 'disconnected' ? '未连接' : '检测中...'}
+            </p>
+            <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+              {redisInfo.address}
             </p>
           </div>
         </div>

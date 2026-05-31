@@ -1,7 +1,9 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { useSessionTimeout } from "@/hooks/useSessionTimeout";
 import Sidebar from "@/components/Sidebar";
 import PasswordChangeModal from "@/components/PasswordChangeModal";
+import PageTitle from "@/components/PageTitle";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import NotFound from "@/pages/NotFound";
@@ -14,10 +16,12 @@ import About from "@/pages/About";
 import Settings from "@/pages/Settings";
 
 function AdminLayout() {
+  useSessionTimeout();
   return (
     <div className="flex h-screen" style={{ backgroundColor: "var(--bg-primary)" }}>
       <Sidebar />
       <main className="flex-1 overflow-y-auto">
+        <PageTitle />
         <PasswordChangeModal />
         <Routes>
           <Route path="dashboard" element={<Dashboard />} />
@@ -36,7 +40,9 @@ function AdminLayout() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  return isAuthenticated ? <>{children}</> : <Navigate to="/admin/login" replace />;
+  const checkSessionTimeout = useAuthStore((state) => state.checkSessionTimeout);
+  const isValid = isAuthenticated && checkSessionTimeout();
+  return isValid ? <>{children}</> : <Navigate to="/admin/login" replace />;
 }
 
 export default function App() {

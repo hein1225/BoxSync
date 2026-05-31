@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Lock, Eye, EyeOff, User } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
@@ -7,8 +8,10 @@ export default function PasswordChangeModal() {
   const showModal = useAuthStore((state) => state.showPasswordChangeModal);
   const dismiss = useAuthStore((state) => state.dismissPasswordChange);
   const updateCredentials = useAuthStore((state) => state.updateCredentials);
+  const logout = useAuthStore((state) => state.logout);
   const updateUser = useUserStore((state) => state.updateUser);
   const users = useUserStore((state) => state.users);
+  const navigate = useNavigate();
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -57,6 +60,8 @@ export default function PasswordChangeModal() {
 
     alert('用户名和密码修改成功！请使用新凭据重新登录。');
     dismiss();
+    logout();
+    navigate('/admin/login');
   };
 
   const handleSkip = () => {

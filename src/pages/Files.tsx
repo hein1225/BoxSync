@@ -1,4 +1,4 @@
-import { HardDrive, Folder, FileText, Image, Music, Video } from 'lucide-react';
+import { HardDrive, Folder, FileText, Image, Video } from 'lucide-react';
 import FileTree from '@/components/FileTree';
 import type { FileTreeNode } from '@/types';
 

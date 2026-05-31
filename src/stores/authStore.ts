@@ -44,15 +44,39 @@ interface AuthState {
   logout: () => void;
   dismissPasswordChange: () => void;
   updateCredentials: (username: string, password: string) => void;
+  checkSessionTimeout: () => boolean;
 }
 
 function getCurrentAuthConfig(): AuthConfig {
   return loadAuthConfig();
 }
 
+const SESSION_KEY = 'boxsync_session_time';
+
+function updateSessionTime() {
+  localStorage.setItem(SESSION_KEY, String(Date.now()));
+}
+
+function getSessionTime(): number | null {
+  const saved = localStorage.getItem(SESSION_KEY);
+  return saved ? parseInt(saved, 10) : null;
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function hasStoredData(): boolean {
+  return !!(
+    localStorage.getItem('boxsync_auth_config') ||
+    localStorage.getItem('boxsync_server_settings') ||
+    localStorage.getItem('boxsync_users')
+  );
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('boxsync_token'),
-  isAuthenticated: !!localStorage.getItem('boxsync_token'),
+  token: hasStoredData() ? localStorage.getItem('boxsync_token') : null,
+  isAuthenticated: hasStoredData() ? !!localStorage.getItem('boxsync_token') : false,
   showPasswordChangeModal: false,
 
   login: async (username: string, password: string) => {
@@ -60,6 +84,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (username === currentConfig.username && password === currentConfig.password) {
       const demoToken = 'demo-jwt-token-' + Date.now();
       localStorage.setItem('boxsync_token', demoToken);
+      updateSessionTime();
       const isDefault = username === 'admin' && password === 'admin123';
       set({ token: demoToken, isAuthenticated: true, showPasswordChangeModal: isDefault });
       return true;
@@ -75,6 +100,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (response.ok) {
         const data = await response.json();
         localStorage.setItem('boxsync_token', data.token);
+        updateSessionTime();
         set({ token: data.token, isAuthenticated: true });
         return true;
       }
@@ -86,6 +112,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     localStorage.removeItem('boxsync_token');
+    clearSession();
     set({ token: null, isAuthenticated: false, showPasswordChangeModal: false });
   },
 
@@ -95,5 +122,33 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   updateCredentials: (username: string, password: string) => {
     saveAuthConfig({ username, password });
+  },
+
+  checkSessionTimeout: () => {
+    const sessionTime = getSessionTime();
+    if (!sessionTime) return true;
+
+    const settingsStr = localStorage.getItem('boxsync_server_settings');
+    let timeoutMinutes = 30;
+    if (settingsStr) {
+      try {
+        const settings = JSON.parse(settingsStr);
+        timeoutMinutes = settings.sessionTimeout ?? 30;
+      } catch {
+        // ignore
+      }
+    }
+
+    const elapsed = Date.now() - sessionTime;
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+
+    if (elapsed > timeoutMs) {
+      localStorage.removeItem('boxsync_token');
+      clearSession();
+      set({ token: null, isAuthenticated: false, showPasswordChangeModal: false });
+      return false;
+    }
+
+    return true;
   },
 }));
