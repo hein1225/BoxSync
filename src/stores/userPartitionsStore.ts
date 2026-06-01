@@ -6,7 +6,7 @@ interface UserPartitionsState {
   loading: boolean;
   error: string | null;
   fetchPartitions: () => Promise<void>;
-  createPartition: (userId: string, username: string) => void;
+  createPartition: (userId: string, username: string) => Promise<void>;
   addAppPartition: (userId: string, appId: string, appName: string) => void;
   updateAppPartition: (userId: string, appId: string, updates: Partial<AppPartition>) => void;
   deletePartition: (userId: string) => void;
@@ -50,18 +50,47 @@ export const useUserPartitionsStore = create<UserPartitionsState>((set, get) => 
     }
   },
 
-  createPartition: (userId, username) => {
+  createPartition: async (userId, username) => {
     const state = get();
     const exists = state.partitions.find((p) => p.userId === userId);
     if (exists) return;
 
-    const newPartition: UserStoragePartition = {
-      userId,
-      username,
-      appPartitions: [],
-      createdAt: Date.now(),
-    };
-    set({ partitions: [...state.partitions, newPartition] });
+    try {
+      const token = getToken();
+      const response = await fetch(`/api/users/${userId}/partition`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.partition) {
+          set({ partitions: [...state.partitions, data.partition] });
+        }
+      } else {
+        // Fallback: update local state only
+        const newPartition: UserStoragePartition = {
+          userId,
+          username,
+          appPartitions: [],
+          createdAt: Date.now(),
+        };
+        set({ partitions: [...state.partitions, newPartition] });
+      }
+    } catch {
+      // Fallback: update local state only
+      const newPartition: UserStoragePartition = {
+        userId,
+        username,
+        appPartitions: [],
+        createdAt: Date.now(),
+      };
+      set({ partitions: [...state.partitions, newPartition] });
+    }
   },
 
   addAppPartition: (userId, appId, appName) => {

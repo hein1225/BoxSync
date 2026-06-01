@@ -15,7 +15,7 @@ export default function Register() {
 
   const serverUrl = `${window.location.origin}/api`;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -59,8 +59,8 @@ export default function Register() {
       status: 'active' as const,
     };
 
-    addUser(newUser);
-    createPartition(newUserId, formData.username);
+    await addUser(newUser);
+    await createPartition(newUserId, formData.username);
     setSuccess(true);
   };
 

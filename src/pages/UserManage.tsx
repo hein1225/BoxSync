@@ -62,7 +62,7 @@ export default function UserManage() {
       });
       if (success) {
         // Auto-create storage partition for new user
-        createPartition(`user-${Date.now()}`, formData.username);
+        await createPartition(`user-${Date.now()}`, formData.username);
       }
     }
     setShowModal(false);

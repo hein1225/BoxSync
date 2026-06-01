@@ -14,8 +14,8 @@ export async function initAdmin() {
     const redisClient = getRedisClient();
     const exists = await redisClient.exists(ADMIN_KEY);
     if (!exists) {
-      const username = 'admin';
-      const password = 'admin123';
+      const username = process.env.ADMIN_USERNAME || 'admin';
+      const password = process.env.ADMIN_PASSWORD || 'admin123';
       const hashedPassword = await bcrypt.hash(password, 10);
       await redisClient.hSet(ADMIN_KEY, {
         userId: 'admin',

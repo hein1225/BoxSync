@@ -192,6 +192,41 @@ router.delete('/:userId', authMiddleware, adminMiddleware, async (req, res, next
   }
 });
 
+// Create or update user storage partition
+router.post('/:userId/partition', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const redisClient = getRedisClient();
+    const userId = req.params.userId as string;
+    const currentUser = req.user!;
+
+    if (currentUser.role !== 'admin' && currentUser.userId !== userId) {
+      throw createError('Access denied', 403, 'FORBIDDEN');
+    }
+
+    const { username } = req.body;
+    const partitionData = await redisClient.hGet('boxsync:partitions', userId);
+
+    if (partitionData) {
+      const partition = JSON.parse(partitionData);
+      if (username) partition.username = username;
+      partition.updatedAt = Date.now();
+      await redisClient.hSet('boxsync:partitions', userId, JSON.stringify(partition));
+      res.json({ success: true, message: 'Partition updated', partition });
+    } else {
+      const newPartition = {
+        userId,
+        username: username || userId,
+        appPartitions: [],
+        createdAt: Date.now(),
+      };
+      await redisClient.hSet('boxsync:partitions', userId, JSON.stringify(newPartition));
+      res.json({ success: true, message: 'Partition created', partition: newPartition });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get user storage partition
 router.get('/:userId/partition', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
