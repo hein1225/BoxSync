@@ -70,17 +70,29 @@ export default function Settings() {
     }
   };
 
-  const handleClearAllData = () => {
-    localStorage.removeItem('boxsync_auth_config');
-    localStorage.removeItem('boxsync_users');
-    localStorage.removeItem('boxsync_logs');
-    localStorage.removeItem('boxsync_server_settings');
-    localStorage.removeItem('boxsync_token');
-    localStorage.removeItem('boxsync_session_time');
-    localStorage.removeItem('boxsync_partitions');
-    setShowClearAllConfirm(false);
-    alert('所有本地数据已清空！页面将刷新恢复默认状态。');
-    window.location.reload();
+  const handleClearAllData = async () => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch('/api/settings/clear-all', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (response.ok) {
+        // Clear local storage
+        localStorage.removeItem('boxsync_token');
+        localStorage.removeItem('boxsync_session_time');
+        setShowClearAllConfirm(false);
+        alert('所有数据已清空！服务器已恢复默认状态，请重新登录。');
+        window.location.href = '/login';
+      } else {
+        const data = await response.json();
+        alert(data.message || '清空数据失败');
+      }
+    } catch (error) {
+      console.error('Failed to clear all data:', error);
+      alert('清空数据失败，请检查网络连接');
+    }
   };
 
   const handleExport = () => {

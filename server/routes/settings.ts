@@ -112,7 +112,10 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
 });
 
 // Import settings (admin only)
-router.post('/import', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentUser = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const { settings, users } = req.body;
@@ -129,11 +132,59 @@ router.post('/import', authMiddleware, adminMiddleware, async (req, res, next) =
       }
     }
 
+    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份，包含 ${users?.length || 0} 个用户`, currentUser.userId, currentUser.username, ip, true);
+
     res.json({
       success: true,
       message: 'Settings imported successfully',
     });
   } catch (error) {
+    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份失败`, currentUser.userId, currentUser.username, ip, false, undefined, (error as Error).message);
+    next(error);
+  }
+});
+
+// Clear all data (admin only) - resets everything to default state
+router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const user = req.user!;
+
+  try {
+    const redisClient = getRedisClient();
+
+    // 1. Reset settings to default
+    await redisClient.set(SETTINGS_KEY, JSON.stringify(defaultSettings));
+
+    // 2. Clear all users (except admin)
+    await redisClient.del('boxsync:users');
+
+    // 3. Clear all logs
+    await redisClient.del('boxsync:logs');
+
+    // 4. Clear all user data (sync data)
+    const dataKeys = await redisClient.keys('boxsync:data:*');
+    for (const key of dataKeys) {
+      await redisClient.del(key);
+    }
+
+    // 5. Clear all partitions
+    await redisClient.del('boxsync:partitions');
+
+    // 6. Clear all sessions
+    const sessionKeys = await redisClient.keys('boxsync:session:*');
+    for (const key of sessionKeys) {
+      await redisClient.del(key);
+    }
+
+    // Log the action
+    await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据`, user.userId, user.username, ip, true);
+
+    res.json({
+      success: true,
+      message: 'All data cleared successfully. Server has been reset to default state.',
+    });
+  } catch (error) {
+    await logAdmin('clear_all', `管理员 ${user.username} 清空数据失败`, user.userId, user.username, ip, false, undefined, (error as Error).message);
     next(error);
   }
 });
