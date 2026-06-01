@@ -61,12 +61,16 @@ router.post('/write', authMiddleware, async (req: AuthRequest, res, next) => {
 
 // Read data
 router.get('/read', authMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const user = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const { appId, key } = req.query as { appId: string; key: string };
-    const userId = req.user!.userId;
+    const userId = user.userId;
 
     if (!appId || !key) {
+      await logSync('read', `读取数据失败：缺少必要参数`, userId, user.username, ip, false, undefined, '缺少 appId 或 key');
       throw createError('appId and key are required', 400, 'INVALID_INPUT');
     }
 
@@ -74,8 +78,11 @@ router.get('/read', authMiddleware, async (req: AuthRequest, res, next) => {
     const data = await redisClient.get(dataKey);
 
     if (!data) {
+      await logSync('read', `读取数据失败：${appId}/${key} 不存在`, userId, user.username, ip, false, undefined, '数据不存在');
       throw createError('Data not found', 404, 'DATA_NOT_FOUND');
     }
+
+    await logSync('read', `读取数据：${appId}/${key}`, userId, user.username, ip, true, appId);
 
     res.json({
       success: true,
@@ -145,12 +152,16 @@ router.post('/batch', authMiddleware, async (req: AuthRequest, res, next) => {
 
 // Get changes
 router.get('/changes', authMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const user = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const { appId, since } = req.query as { appId: string; since: string };
-    const userId = req.user!.userId;
+    const userId = user.userId;
 
     if (!appId) {
+      await logSync('sync', `获取变更列表失败：缺少 appId`, userId, user.username, ip, false, undefined, '缺少 appId');
       throw createError('appId is required', 400, 'INVALID_INPUT');
     }
 
@@ -184,6 +195,8 @@ router.get('/changes', authMiddleware, async (req: AuthRequest, res, next) => {
         }
       }
     }
+
+    await logSync('sync', `获取变更列表：${appId}，${changes.length} 条变更`, userId, user.username, ip, true, appId);
 
     res.json({
       success: true,
