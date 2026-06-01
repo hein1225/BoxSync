@@ -14,8 +14,6 @@ export interface ServerSettings {
   sessionTimeout: number;
 }
 
-const STORAGE_KEY = 'boxsync_server_settings';
-
 const defaultSettings: ServerSettings = {
   serverName: 'BoxSync',
   serverPort: 9390,
@@ -30,57 +28,117 @@ const defaultSettings: ServerSettings = {
   sessionTimeout: 30,
 };
 
-function loadSettings(): ServerSettings {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return { ...defaultSettings, ...JSON.parse(saved) };
-    }
-  } catch {
-    // ignore parse error
-  }
-  return { ...defaultSettings };
-}
-
 interface SettingsState {
   settings: ServerSettings;
-  updateSettings: (partial: Partial<ServerSettings>) => void;
-  resetSettings: () => void;
+  loading: boolean;
+  error: string | null;
+  fetchSettings: () => Promise<void>;
+  updateSettings: (partial: Partial<ServerSettings>) => Promise<boolean>;
+  resetSettings: () => Promise<boolean>;
   exportSettings: () => string;
-  importSettings: (json: string) => boolean;
+  importSettings: (json: string) => Promise<boolean>;
+}
+
+function getToken(): string | null {
+  return localStorage.getItem('boxsync_token');
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  settings: loadSettings(),
+  settings: { ...defaultSettings },
+  loading: false,
+  error: null,
 
-  updateSettings: (partial) => {
-    set((state) => {
-      const updated = { ...state.settings, ...partial };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      } catch (e) {
-        console.error('localStorage save failed:', e);
+  fetchSettings: async () => {
+    set({ loading: true, error: null });
+    try {
+      const token = getToken();
+      const response = await fetch('/api/settings', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.settings) {
+          set({ settings: { ...defaultSettings, ...data.settings }, loading: false });
+          return;
+        }
       }
-      return { settings: updated };
-    });
+      set({ loading: false });
+    } catch (e) {
+      console.error('Failed to fetch settings:', e);
+      set({ loading: false, error: '获取设置失败' });
+    }
   },
 
-  resetSettings: () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultSettings));
-    set({ settings: { ...defaultSettings } });
+  updateSettings: async (partial) => {
+    try {
+      const token = getToken();
+      const response = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(partial),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.settings) {
+          set({ settings: { ...get().settings, ...data.settings } });
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to update settings:', e);
+      return false;
+    }
+  },
+
+  resetSettings: async () => {
+    try {
+      const token = getToken();
+      const response = await fetch('/api/settings/reset', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.settings) {
+          set({ settings: { ...data.settings } });
+          return true;
+        }
+      }
+      return false;
+    } catch (e) {
+      console.error('Failed to reset settings:', e);
+      return false;
+    }
   },
 
   exportSettings: () => {
     return JSON.stringify(get().settings, null, 2);
   },
 
-  importSettings: (json) => {
+  importSettings: async (json) => {
     try {
       const parsed = JSON.parse(json);
       const merged = { ...defaultSettings, ...parsed };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      set({ settings: merged });
-      return true;
+      const token = getToken();
+      const response = await fetch('/api/settings/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ settings: merged }),
+      });
+      if (response.ok) {
+        set({ settings: merged });
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }

@@ -27,7 +27,7 @@ const retentionOptions = [
 ];
 
 export default function Settings() {
-  const { settings, updateSettings, resetSettings, exportSettings, importSettings } = useSettingsStore();
+  const { settings, updateSettings, resetSettings, exportSettings, importSettings, fetchSettings } = useSettingsStore();
   const [localSettings, setLocalSettings] = useState<ServerSettings>(settings);
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState('');
@@ -38,6 +38,11 @@ export default function Settings() {
 
   const registrationUrl = `${window.location.origin}/register`;
 
+  // Load settings from server on mount
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
+
   // Sync localSettings when store settings change (e.g. after import or reset)
   useEffect(() => {
     setLocalSettings(settings);
@@ -47,18 +52,22 @@ export default function Settings() {
     setLocalSettings((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSave = () => {
-    updateSettings(localSettings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    const success = await updateSettings(localSettings);
+    if (success) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
   };
 
-  const handleReset = () => {
-    resetSettings();
-    setLocalSettings(useSettingsStore.getState().settings);
-    setShowResetConfirm(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleReset = async () => {
+    const success = await resetSettings();
+    if (success) {
+      setLocalSettings(useSettingsStore.getState().settings);
+      setShowResetConfirm(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
   };
 
   const handleClearAllData = () => {
@@ -89,14 +98,14 @@ export default function Settings() {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const content = event.target?.result as string;
-      const success = importSettings(content);
+      const success = await importSettings(content);
       if (success) {
         setLocalSettings(useSettingsStore.getState().settings);
         setImportError('');
@@ -136,7 +145,7 @@ export default function Settings() {
             服务器设置
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            配置持久化存储在浏览器本地，支持导出备份与导入还原
+            配置持久化存储在服务端，支持导出备份与导入还原
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -163,8 +172,8 @@ export default function Settings() {
             持久化存储说明
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-            以下设置保存在浏览器 localStorage 中，与 Redis 用户同步数据完全隔离。
-            Docker 部署时可通过导出 JSON 配置文件持久化到宿主机文件夹。
+            以下设置保存在服务端 Redis / MemoryDB 中，所有浏览器共享同一配置。
+            重启服务后设置依然保留（内存模式除外）。
           </p>
         </div>
       </div>

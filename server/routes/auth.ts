@@ -158,6 +158,21 @@ router.post('/register', async (req, res, next) => {
   }
 });
 
+// Logout - invalidate session
+router.post('/logout', async (req, res, next) => {
+  try {
+    const redisClient = getRedisClient();
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      await redisClient.del(`${SESSION_PREFIX}${token}`);
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Update admin credentials
 router.post('/update-credentials', async (req, res, next) => {
   try {
