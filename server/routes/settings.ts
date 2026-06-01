@@ -139,7 +139,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       message: 'Settings imported successfully',
     });
   } catch (error) {
-    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份失败`, currentUser.userId, currentUser.username, ip, false, undefined, (error as Error).message);
+    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份失败`, currentUser.userId, currentUser.username, ip, false, (error as Error).message);
     next(error);
   }
 });
@@ -184,7 +184,7 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
       message: 'All data cleared successfully. Server has been reset to default state.',
     });
   } catch (error) {
-    await logAdmin('clear_all', `管理员 ${user.username} 清空数据失败`, user.userId, user.username, ip, false, undefined, (error as Error).message);
+    await logAdmin('clear_all', `管理员 ${user.username} 清空数据失败`, user.userId, user.username, ip, false, (error as Error).message);
     next(error);
   }
 });
