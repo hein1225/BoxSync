@@ -6,6 +6,7 @@ interface AuthState {
   showPasswordChangeModal: boolean;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  updateCredentials: (username: string, password: string) => Promise<boolean>;
   dismissPasswordChange: () => void;
   checkSessionTimeout: () => boolean;
 }
@@ -69,6 +70,27 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('boxsync_token');
     clearSession();
     set({ token: null, isAuthenticated: false, showPasswordChangeModal: false });
+  },
+
+  updateCredentials: async (username: string, password: string) => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch('/api/auth/update-credentials', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ username, password }),
+      });
+      if (response.ok) {
+        set({ showPasswordChangeModal: false });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   },
 
   dismissPasswordChange: () => {

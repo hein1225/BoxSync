@@ -20,7 +20,7 @@ export default function PasswordChangeModal() {
 
   if (!showModal) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -50,7 +50,11 @@ export default function PasswordChangeModal() {
     }
 
     // Update auth credentials
-    updateCredentials(newUsername, newPassword);
+    const success = await updateCredentials(newUsername, newPassword);
+    if (!success) {
+      setError('更新失败，请检查网络连接');
+      return;
+    }
 
     // Sync admin username in user management
     const adminUser = users.find((u) => u.role === 'admin');
@@ -59,7 +63,6 @@ export default function PasswordChangeModal() {
     }
 
     alert('用户名和密码修改成功！请使用新凭据重新登录。');
-    dismiss();
     logout();
     navigate('/admin/login');
   };
