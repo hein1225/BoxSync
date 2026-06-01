@@ -400,7 +400,22 @@ Authorization: Bearer {token}
 
 ### 数据同步接口
 
-#### 写入数据
+BoxSync 提供完整的数据同步接口，支持单条/批量上传、下载、对比同步等功能。
+
+#### 接口清单
+
+| 接口 | 方法 | 功能说明 |
+|------|------|----------|
+| `POST /api/sync/write` | 上传数据 | 单条数据写入 |
+| `POST /api/sync/batch` | 批量上传 | 多条数据批量写入 |
+| `GET /api/sync/read` | 下载数据 | 读取单条数据 |
+| `GET /api/sync/changes` | 对比同步 | 获取指定时间后的变更数据 |
+| `DELETE /api/sync/delete` | 删除数据 | 删除指定数据 |
+| `GET /api/sync/apps` | 应用列表 | 获取用户的应用分区列表 |
+| `POST /api/sync/apps` | 创建应用 | 创建新的应用分区 |
+| `GET /api/sync/admin/stats` | 存储统计 | 管理员获取所有用户存储统计 |
+
+#### 写入数据（上传）
 
 ```http
 POST /api/sync/write
@@ -427,7 +442,7 @@ Content-Type: application/json
 }
 ```
 
-#### 读取数据
+#### 读取数据（下载）
 
 ```http
 GET /api/sync/read?appId=myapp&key=settings.theme
@@ -446,7 +461,7 @@ Authorization: Bearer {token}
 }
 ```
 
-#### 批量同步
+#### 批量同步（批量上传）
 
 ```http
 POST /api/sync/batch
@@ -475,12 +490,18 @@ Content-Type: application/json
 }
 ```
 
-#### 获取变更列表
+#### 获取变更列表（对比同步）
+
+获取指定时间戳之后的所有变更数据，用于增量同步。
 
 ```http
 GET /api/sync/changes?appId=myapp&since=1717000000000
 Authorization: Bearer {token}
 ```
+
+参数说明：
+- `appId` - 应用ID（必填）
+- `since` - 时间戳（可选，默认为0，返回所有数据）
 
 响应：
 
@@ -492,6 +513,20 @@ Authorization: Bearer {token}
   ],
   "timestamp": 1717000001000
 }
+```
+
+**客户端同步流程示例：**
+
+```javascript
+// 1. 首次同步（全量下载）
+const res = await fetch('/api/sync/changes?appId=myapp&since=0');
+
+// 2. 增量同步（对比下载）
+const lastSyncTime = localStorage.getItem('lastSyncTime');
+const res = await fetch(`/api/sync/changes?appId=myapp&since=${lastSyncTime}`);
+
+// 3. 保存上次同步时间
+localStorage.setItem('lastSyncTime', Date.now());
 ```
 
 #### 删除数据

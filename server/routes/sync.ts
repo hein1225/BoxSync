@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getRedisClient } from '../db.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 import { createError } from '../middleware/error.js';
 import { logSync } from '../utils/logger.js';
 import type { AuthRequest } from '../middleware/auth.js';
@@ -154,7 +154,15 @@ router.get('/changes', authMiddleware, async (req: AuthRequest, res, next) => {
       throw createError('appId is required', 400, 'INVALID_INPUT');
     }
 
-    const sinceTime = since ? parseInt(since) : 0;
+    // Fix: handle invalid since parameter
+    let sinceTime = 0;
+    if (since && since !== 'undefined' && since !== 'null') {
+      const parsed = parseInt(since);
+      if (!isNaN(parsed)) {
+        sinceTime = parsed;
+      }
+    }
+
     const pattern = `${DATA_PREFIX}${userId}:${appId}:*`;
     const keys = await redisClient.keys(pattern);
 
@@ -282,6 +290,90 @@ router.post('/apps', authMiddleware, async (req: AuthRequest, res, next) => {
       success: true,
       message: 'App partition created',
       app: meta,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin: Get all users' storage stats
+router.get('/admin/stats', authMiddleware, adminMiddleware, async (req, res, next) => {
+  try {
+    const redisClient = getRedisClient();
+
+    // Get all users
+    const usersData = await redisClient.hGetAll('boxsync:users');
+    const adminData = await redisClient.hGetAll('boxsync:admin');
+
+    const allUsers = [
+      {
+        userId: adminData.userId || 'admin',
+        username: adminData.username || 'admin',
+        role: 'admin',
+      },
+      ...Object.values(usersData).map((u) => {
+        const user = JSON.parse(u);
+        return {
+          userId: user.userId,
+          username: user.username,
+          role: user.role,
+        };
+      }),
+    ];
+
+    // Get storage stats for each user
+    const userStats = [];
+    for (const user of allUsers) {
+      const pattern = `${DATA_PREFIX}${user.userId}:*${META_SUFFIX}`;
+      const metaKeys = await redisClient.keys(pattern);
+
+      let keyCount = 0;
+      let memoryUsage = 0;
+      let lastSyncTime = 0;
+      const apps: Array<{ appId: string; appName: string; keyCount: number }> = [];
+
+      for (const metaKey of metaKeys) {
+        const metaData = await redisClient.get(metaKey);
+        if (metaData) {
+          const meta = JSON.parse(metaData);
+          keyCount += meta.keyCount || 0;
+          if (meta.lastSyncTime > lastSyncTime) {
+            lastSyncTime = meta.lastSyncTime;
+          }
+          apps.push({
+            appId: meta.appId,
+            appName: meta.appName || meta.appId,
+            keyCount: meta.keyCount || 0,
+          });
+        }
+      }
+
+      // Calculate memory usage by scanning data keys
+      const dataPattern = `${DATA_PREFIX}${user.userId}:*`;
+      const dataKeys = await redisClient.keys(dataPattern);
+      for (const key of dataKeys) {
+        if (!key.endsWith(META_SUFFIX)) {
+          const value = await redisClient.get(key);
+          if (value) {
+            memoryUsage += Buffer.byteLength(value, 'utf8');
+          }
+        }
+      }
+
+      userStats.push({
+        userId: user.userId,
+        username: user.username,
+        role: user.role,
+        keyCount,
+        memoryUsage,
+        lastSyncTime,
+        apps,
+      });
+    }
+
+    res.json({
+      success: true,
+      stats: userStats,
     });
   } catch (error) {
     next(error);

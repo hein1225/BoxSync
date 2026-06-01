@@ -30,34 +30,25 @@ export default function StorageView() {
     fetchPartitions();
   }, [fetchUsers, fetchPartitions]);
 
-  // Fetch real storage data from API
+  // Fetch real storage data from API (admin only)
   useEffect(() => {
     const fetchStorageData = async () => {
       try {
         const token = localStorage.getItem('boxsync_token');
-        const response = await fetch('/api/sync/apps', {
+        const response = await fetch('/api/sync/admin/stats', {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.apps) {
-            // Transform app data to storage stats per user
-            const userMap = new Map<string, StorageStats>();
-            data.apps.forEach((app: any) => {
-              const existing = userMap.get(app.userId) || {
-                username: app.username || app.userId,
-                keyCount: 0,
-                memoryUsage: 0,
-                lastSyncTime: 0,
-              };
-              existing.keyCount += app.keyCount || 0;
-              existing.memoryUsage += app.memoryUsage || 0;
-              if (app.lastSyncTime > existing.lastSyncTime) {
-                existing.lastSyncTime = app.lastSyncTime;
-              }
-              userMap.set(app.userId, existing);
-            });
-            setStorageStats(Array.from(userMap.values()));
+          if (data.success && data.stats) {
+            // Transform stats to storage stats
+            const stats = data.stats.map((userStat: any) => ({
+              username: userStat.username,
+              keyCount: userStat.keyCount || 0,
+              memoryUsage: userStat.memoryUsage || 0,
+              lastSyncTime: userStat.lastSyncTime || 0,
+            }));
+            setStorageStats(stats);
           }
         }
       } catch (e) {
