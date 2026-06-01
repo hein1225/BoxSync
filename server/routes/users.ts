@@ -178,7 +178,9 @@ router.delete('/:userId', authMiddleware, adminMiddleware, async (req, res, next
     // Clean up user data
     const keys = await redisClient.keys(`boxsync:data:${userId}:*`);
     if (keys.length > 0) {
-      await redisClient.del(keys as unknown as string);
+      for (const key of keys) {
+        await redisClient.del(key);
+      }
     }
 
     res.json({

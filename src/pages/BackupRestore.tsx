@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Download, Upload, AlertTriangle, CheckCircle, FileJson } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useUserStore } from '@/stores/userStore';
@@ -28,6 +28,18 @@ export default function BackupRestore() {
   const users = useUserStore((state) => state.users);
   const partitions = useUserPartitionsStore((state) => state.partitions);
   const logs = useLogStore((state) => state.logs);
+  const fetchUsers = useUserStore((state) => state.fetchUsers);
+  const fetchPartitions = useUserPartitionsStore((state) => state.fetchPartitions);
+  const fetchLogs = useLogStore((state) => state.fetchLogs);
+  const fetchSettings = useSettingsStore((state) => state.fetchSettings);
+
+  // Load all data on mount
+  useEffect(() => {
+    fetchUsers();
+    fetchPartitions();
+    fetchLogs();
+    fetchSettings();
+  }, [fetchUsers, fetchPartitions, fetchLogs, fetchSettings]);
 
   const handleExport = () => {
     const backupData: BackupData = {
@@ -85,23 +97,44 @@ export default function BackupRestore() {
     fileInputRef.current?.click();
   };
 
-  const confirmImport = () => {
+  const confirmImport = async () => {
     if (!pendingFile) return;
 
     try {
       const { data } = pendingFile;
+      const token = localStorage.getItem('boxsync_token');
 
+      // Import settings via API
       if (data.settings) {
-        localStorage.setItem('boxsync_server_settings', JSON.stringify(data.settings));
+        await fetch('/api/settings/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ settings: data.settings }),
+        });
       }
-      if (data.users) {
-        localStorage.setItem('boxsync_users', JSON.stringify(data.users));
-      }
-      if (data.partitions) {
-        localStorage.setItem('boxsync_user_partitions', JSON.stringify(data.partitions));
-      }
-      if (data.logs) {
-        localStorage.setItem('boxsync_logs', JSON.stringify(data.logs));
+
+      // Import users via API
+      if (data.users && Array.isArray(data.users)) {
+        for (const user of data.users) {
+          const u = user as Record<string, unknown>;
+          if (u.userId && u.username && u.password) {
+            await fetch('/api/users', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                username: String(u.username),
+                password: String(u.password),
+                role: (u.role as string) || 'user',
+              }),
+            });
+          }
+        }
       }
 
       setShowImportConfirm(false);
@@ -109,8 +142,10 @@ export default function BackupRestore() {
       setImportSuccess(true);
       setTimeout(() => setImportSuccess(false), 3000);
 
-      // Reload page to apply imported data
+      // Refresh data after import
       setTimeout(() => {
+        fetchUsers();
+        fetchSettings();
         window.location.reload();
       }, 1500);
     } catch {

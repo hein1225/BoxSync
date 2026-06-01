@@ -11,12 +11,24 @@ export default function Dashboard() {
   const partitions = useUserPartitionsStore((state) => state.partitions);
   const settings = useSettingsStore((state) => state.settings);
   const logs = useLogStore((state) => state.logs);
+  const fetchUsers = useUserStore((state) => state.fetchUsers);
+  const fetchPartitions = useUserPartitionsStore((state) => state.fetchPartitions);
+  const fetchLogs = useLogStore((state) => state.fetchLogs);
+  const fetchSettings = useSettingsStore((state) => state.fetchSettings);
 
   const [redisInfo, setRedisInfo] = useState<{
     status: 'connected' | 'disconnected' | 'checking';
     address: string;
     mode: string;
   }>({ status: 'checking', address: '检测中...', mode: '' });
+
+  // Load all data on mount
+  useEffect(() => {
+    fetchUsers();
+    fetchPartitions();
+    fetchLogs();
+    fetchSettings();
+  }, [fetchUsers, fetchPartitions, fetchLogs, fetchSettings]);
 
   useEffect(() => {
     const checkRedis = async () => {
@@ -253,7 +265,7 @@ export default function Dashboard() {
           <div className="min-w-0">
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Redis 状态</p>
             <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              {redisInfo.status === 'connected' ? '已连接' : redisInfo.status === 'disconnected' ? '未连接' : '检测中...'}
+              {redisInfo.mode === 'memory' ? '内存模式' : redisInfo.status === 'connected' ? '已连接' : redisInfo.status === 'disconnected' ? '未连接' : '检测中...'}
             </p>
             <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
               {redisInfo.address}{redisInfo.mode ? ` (${redisInfo.mode})` : ''}

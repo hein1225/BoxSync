@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: boxsync-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - boxsync-network
+
+  boxsync:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: boxsync-server
+    restart: unless-stopped
+    ports:
+      - "9390:9390"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - SERVER_PORT=9390
+      - DOCKER_CONTAINER=true
+      # IMPORTANT: Change this to a strong random secret in production!
+      # Generate with: openssl rand -base64 32
+      - JWT_SECRET=boxsync-secret-key-change-in-production
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - boxsync-network
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  boxsync-network:
+    driver: bridge

@@ -145,6 +145,9 @@ let redisClient: UnifiedRedisClient;
 let isMemoryMode = false;
 
 export async function initRedis(): Promise<UnifiedRedisClient> {
+  // Check if running in Docker (Docker sets container-specific env vars)
+  const isDocker = process.env.CONTAINER === 'true' || process.env.DOCKER_CONTAINER === 'true';
+
   // Try connecting to Redis with a timeout
   const connectPromise = new Promise<UnifiedRedisClient>(async (resolve, reject) => {
     const realClient = createClient({
@@ -158,7 +161,7 @@ export async function initRedis(): Promise<UnifiedRedisClient> {
     const timeout = setTimeout(() => {
       realClient.disconnect().catch(() => {});
       reject(new Error('Connection timeout'));
-    }, 5000);
+    }, 15000);
 
     realClient.on('error', () => {
       // Silently ignore errors, we'll handle them via connect/reject
@@ -185,10 +188,19 @@ export async function initRedis(): Promise<UnifiedRedisClient> {
     isMemoryMode = false;
     return redisClient;
   } catch (error) {
-    console.warn('Redis connection failed, falling back to memory mode:', (error as Error).message);
+    const errorMsg = (error as Error).message;
+    console.error('Redis connection failed:', errorMsg);
+
+    // In Docker, Redis is required - do not fall back to memory mode
+    if (isDocker) {
+      console.error('[FATAL] Redis connection is required in Docker. Exiting.');
+      process.exit(1);
+    }
+
+    console.warn('Falling back to memory mode - data will be lost on restart');
   }
 
-  // Fallback to memory client
+  // Fallback to memory client (local development only)
   const memoryClient = new MemoryRedisClient();
   await memoryClient.connect();
   redisClient = memoryClient;

@@ -1,12 +1,16 @@
 # BoxSync 云同步轻服务器
 
-BoxSync 是一款专为个人开发者和小型团队设计的轻量级云同步服务器。基于 Redis 高性能存储（支持自动降级到内存模式），支持多应用数据分区隔离，提供简洁的管理后台，让数据同步变得简单可靠。
+BoxSync 是一款专为个人开发者和小型团队设计的轻量级云同步服务器。基于 Redis 高性能存储，支持多应用数据分区隔离，提供简洁的管理后台，让数据同步变得简单可靠。
+
+> **部署模式说明：**
+> - **本地开发**：无 Redis 时自动降级到内存模式（数据重启后丢失，仅用于测试）
+> - **Docker 部署**：强制要求 Redis 连接，确保数据持久化
 
 ## 功能特性
 
 - **多用户管理**：支持管理员创建用户或开启自助注册
 - **多应用分区**：一个账户可为不同软件创建独立的同步数据分区
-- **Redis 高性能存储**：用户同步数据存储在 Redis，读写速度快；无 Redis 时自动降级到内存模式
+- **Redis 高性能存储**：用户同步数据存储在 Redis，读写速度快；本地开发无 Redis 时自动降级到内存模式
 - **管理后台**：暗黑主题管理界面，支持概览、用户、存储、日志、设置等模块
 - **数据备份导出**：支持 JSON 格式配置导出，方便 Docker 部署时持久化
 - **安全认证**：首次登录强制修改默认凭据，支持强制认证开关
@@ -16,7 +20,7 @@ BoxSync 是一款专为个人开发者和小型团队设计的轻量级云同步
 
 - **前端**：React 18 + TypeScript + Vite + Tailwind CSS + Zustand
 - **后端**：Node.js + Express + TypeScript
-- **数据存储**：Redis（生产环境）/ 内存模式（开发测试）
+- **数据存储**：Redis（生产/Docker 环境）/ 内存模式（仅本地开发测试）
 - **认证**：JWT Token
 
 ## 快速开始
@@ -57,40 +61,61 @@ npm run dev
 
 #### 方式一：Docker Compose（推荐）
 
-**docker-compose.yml**
+项目已包含 `docker-compose.yml`，直接启动即可：
+
+```bash
+docker-compose up -d
+```
+
+或手动配置：
 
 ```yaml
+version: '3.8'
+
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: boxsync-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - boxsync-network
+
   boxsync:
     build:
-      context: https://github.com/hein1225/BoxSync.git#main
+      context: .
       dockerfile: Dockerfile
-    container_name: boxsync
+    container_name: boxsync-server
+    restart: unless-stopped
     ports:
       - "9390:9390"
     environment:
       - REDIS_URL=redis://redis:6379
       - SERVER_PORT=9390
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
+      - DOCKER_CONTAINER=true
+      # IMPORTANT: 生产环境必须修改 JWT_SECRET！
+      # 生成命令：openssl rand -base64 32
+      - JWT_SECRET=boxsync-secret-key-change-in-production
     depends_on:
-      - redis
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: boxsync-redis
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
+      redis:
+        condition: service_healthy
+    networks:
+      - boxsync-network
 
 volumes:
   redis-data:
-```
+    driver: local
 
-启动：
-```bash
-docker-compose up -d
+networks:
+  boxsync-network:
+    driver: bridge
 ```
 
 访问：`http://your-server-ip:9390/`
@@ -98,7 +123,21 @@ docker-compose up -d
 #### 方式二：使用预构建镜像
 
 ```yaml
+version: '3.8'
+
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: boxsync-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   boxsync:
     image: hyc5069/boxsync:latest
     container_name: boxsync
@@ -107,17 +146,11 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - SERVER_PORT=9390
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
+      - DOCKER_CONTAINER=true
+      - JWT_SECRET=boxsync-secret-key-change-in-production
     depends_on:
-      - redis
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    container_name: boxsync-redis
-    volumes:
-      - redis-data:/data
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
@@ -129,22 +162,9 @@ volumes:
 适用于 NAS 等需要直接使用宿主机网络的场景：
 
 ```yaml
-services:
-  boxsync:
-    image: hyc5069/boxsync:latest
-    container_name: boxsync
-    network_mode: host
-    ports:
-      - "9390:9390"
-    environment:
-      - REDIS_URL=redis://localhost:6379
-      - SERVER_PORT=9390
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin123
-    depends_on:
-      - redis
-    restart: unless-stopped
+version: '3.8'
 
+services:
   redis:
     image: redis:7-alpine
     container_name: boxsync-redis
@@ -152,10 +172,23 @@ services:
     volumes:
       - ./redis-data:/data
     restart: unless-stopped
+
+  boxsync:
+    image: hyc5069/boxsync:latest
+    container_name: boxsync
+    network_mode: host
+    environment:
+      - REDIS_URL=redis://localhost:6379
+      - SERVER_PORT=9390
+      - DOCKER_CONTAINER=true
+      - JWT_SECRET=boxsync-secret-key-change-in-production
+    depends_on:
+      - redis
+    restart: unless-stopped
 ```
 
 > **Host 模式注意事项：**
-> - `ports` 映射在 host 模式下不生效，但保留配置可在飞牛 NAS 等平台的 Docker 管理界面中显示端口信息，方便识别和管理
+> - `ports` 映射在 host 模式下不生效
 > - 服务直接使用宿主机的 9390 端口
 > - Redis 连接地址需改为 `redis://localhost:6379`
 > - 部分 NAS 的 Docker 套件可能不支持 host 模式，请使用 Bridge 模式
@@ -168,8 +201,9 @@ services:
 |--------|------|--------|
 | `REDIS_URL` | Redis 连接地址 | `redis://localhost:6379` |
 | `SERVER_PORT` | 服务端口 | `9390` |
-| `ADMIN_USERNAME` | 管理员用户名 | `admin` |
-| `ADMIN_PASSWORD` | 管理员密码 | `admin123` |
+| `JWT_SECRET` | JWT 签名密钥（生产环境必须修改） | `boxsync-secret-key-change-in-production` |
+
+> **注意：** 管理员初始用户名为 `admin`，密码为 `admin123`。首次登录后系统会强制提示修改密码，以确保安全性。
 
 ### 管理后台设置
 
@@ -662,6 +696,7 @@ BoxSync/
 │   ├── components/         # 通用组件
 │   ├── pages/              # 页面组件
 │   ├── stores/             # 状态管理 (Zustand)
+│   ├── types/              # TypeScript 类型定义
 │   ├── App.tsx             # 主应用
 │   └── main.tsx            # 入口文件
 ├── server/                 # 后端源码

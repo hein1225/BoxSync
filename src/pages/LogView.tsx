@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Filter, Download, Trash2, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Filter, Download, Trash2, Search, RefreshCw } from 'lucide-react';
 import { useLogStore } from '@/stores/logStore';
 
 const logTypeLabels: Record<string, string> = {
@@ -17,9 +17,14 @@ const logTypeColors: Record<string, string> = {
 };
 
 export default function LogView() {
-  const { logs, clearLogs } = useLogStore();
+  const { logs, clearLogs, fetchLogs, loading } = useLogStore();
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Load logs on mount
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
 
   const filteredLogs = logs.filter((log) => {
     const matchType = filterType === 'all' || log.type === filterType;
@@ -30,10 +35,14 @@ export default function LogView() {
     return matchType && matchSearch;
   });
 
-  const handleClearLogs = () => {
+  const handleClearLogs = async () => {
     if (confirm('确定要清空所有日志吗？')) {
-      clearLogs();
+      await clearLogs();
     }
+  };
+
+  const handleRefresh = () => {
+    fetchLogs();
   };
 
   const handleExport = () => {
@@ -62,6 +71,19 @@ export default function LogView() {
           日志查看
         </h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"
+            style={{
+              backgroundColor: 'var(--bg-input)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
           <button
             onClick={handleExport}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200"

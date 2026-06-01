@@ -14,8 +14,8 @@ export async function initAdmin() {
     const redisClient = getRedisClient();
     const exists = await redisClient.exists(ADMIN_KEY);
     if (!exists) {
-      const username = process.env.ADMIN_USERNAME || 'admin';
-      const password = process.env.ADMIN_PASSWORD || 'admin123';
+      const username = 'admin';
+      const password = 'admin123';
       const hashedPassword = await bcrypt.hash(password, 10);
       await redisClient.hSet(ADMIN_KEY, {
         userId: 'admin',
@@ -45,7 +45,8 @@ router.post('/login', async (req, res, next) => {
 
     // Check admin first
     const adminData = await redisClient.hGetAll(ADMIN_KEY);
-    if (adminData.username === username) {
+    console.log('Login attempt - Admin data:', JSON.stringify(adminData));
+    if (adminData && adminData.username === username) {
       const valid = await bcrypt.compare(password, adminData.password);
       if (!valid) {
         throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');

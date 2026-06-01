@@ -1,28 +1,11 @@
 import { create } from 'zustand';
 import type { UserStoragePartition, AppPartition } from '@/types';
 
-const PARTITIONS_STORAGE_KEY = 'boxsync_user_partitions';
-
-function loadPartitions(): UserStoragePartition[] {
-  try {
-    const saved = localStorage.getItem(PARTITIONS_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-function savePartitions(partitions: UserStoragePartition[]) {
-  try {
-    localStorage.setItem(PARTITIONS_STORAGE_KEY, JSON.stringify(partitions));
-  } catch (e) {
-    console.error('save partitions failed:', e);
-  }
-}
-
 interface UserPartitionsState {
   partitions: UserStoragePartition[];
+  loading: boolean;
+  error: string | null;
+  fetchPartitions: () => Promise<void>;
   createPartition: (userId: string, username: string) => void;
   addAppPartition: (userId: string, appId: string, appName: string) => void;
   updateAppPartition: (userId: string, appId: string, updates: Partial<AppPartition>) => void;
@@ -30,8 +13,42 @@ interface UserPartitionsState {
   getPartitionByUserId: (userId: string) => UserStoragePartition | undefined;
 }
 
+function getToken(): string | null {
+  return localStorage.getItem('boxsync_token');
+}
+
 export const useUserPartitionsStore = create<UserPartitionsState>((set, get) => ({
-  partitions: loadPartitions(),
+  partitions: [],
+  loading: false,
+  error: null,
+
+  fetchPartitions: async () => {
+    try {
+      set({ loading: true, error: null });
+      const token = getToken();
+      const response = await fetch('/api/users', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.users) {
+          // Build partitions from users data
+          const partitions: UserStoragePartition[] = data.users.map((user: any) => ({
+            userId: user.userId,
+            username: user.username,
+            appPartitions: [],
+            createdAt: user.createdAt,
+          }));
+          set({ partitions, loading: false });
+        }
+      } else {
+        set({ error: 'Failed to fetch partitions', loading: false });
+      }
+    } catch (e) {
+      set({ error: 'Network error', loading: false });
+    }
+  },
 
   createPartition: (userId, username) => {
     const state = get();
@@ -44,9 +61,7 @@ export const useUserPartitionsStore = create<UserPartitionsState>((set, get) => 
       appPartitions: [],
       createdAt: Date.now(),
     };
-    const updated = [...state.partitions, newPartition];
-    savePartitions(updated);
-    set({ partitions: updated });
+    set({ partitions: [...state.partitions, newPartition] });
   },
 
   addAppPartition: (userId, appId, appName) => {
@@ -69,7 +84,6 @@ export const useUserPartitionsStore = create<UserPartitionsState>((set, get) => 
         ],
       };
     });
-    savePartitions(updated);
     set({ partitions: updated });
   },
 
@@ -84,14 +98,12 @@ export const useUserPartitionsStore = create<UserPartitionsState>((set, get) => 
         ),
       };
     });
-    savePartitions(updated);
     set({ partitions: updated });
   },
 
   deletePartition: (userId) => {
     const state = get();
     const updated = state.partitions.filter((p) => p.userId !== userId);
-    savePartitions(updated);
     set({ partitions: updated });
   },
 

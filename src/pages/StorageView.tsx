@@ -1,15 +1,14 @@
+import { useState, useEffect } from 'react';
 import { Database, HardDrive, Clock, Server, Shield, Layers } from 'lucide-react';
 import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
 import { useUserStore } from '@/stores/userStore';
-import type { StorageStats } from '@/types';
 
-// Demo sync data for regular users
-// In production, this comes from Redis
-const demoSyncData: Record<string, { keyCount: number; memoryUsage: number; lastSyncTime: number }> = {
-  user1: { keyCount: 89, memoryUsage: 1048576, lastSyncTime: 1716990000000 },
-  user2: { keyCount: 234, memoryUsage: 3145728, lastSyncTime: 1716980000000 },
-  user3: { keyCount: 45, memoryUsage: 524288, lastSyncTime: 1716970000000 },
-};
+interface StorageStats {
+  username: string;
+  keyCount: number;
+  memoryUsage: number;
+  lastSyncTime: number;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -20,22 +19,61 @@ function formatBytes(bytes: number): string {
 }
 
 export default function StorageView() {
-  const { partitions } = useUserPartitionsStore();
-  const { users } = useUserStore();
+  const { partitions, fetchPartitions } = useUserPartitionsStore();
+  const { users, fetchUsers } = useUserStore();
+  const [storageStats, setStorageStats] = useState<StorageStats[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Get only regular users (exclude admin)
-  const regularUsers = users.filter((u) => u.role === 'user');
+  // Load users and partitions on mount
+  useEffect(() => {
+    fetchUsers();
+    fetchPartitions();
+  }, [fetchUsers, fetchPartitions]);
 
-  // Build storage stats from actual users + demo sync data
-  const storageStats: StorageStats[] = regularUsers.map((user) => {
-    const syncData = demoSyncData[user.username] || { keyCount: 0, memoryUsage: 0, lastSyncTime: 0 };
-    return {
-      username: user.username,
-      keyCount: syncData.keyCount,
-      memoryUsage: syncData.memoryUsage,
-      lastSyncTime: syncData.lastSyncTime,
+  // Fetch real storage data from API
+  useEffect(() => {
+    const fetchStorageData = async () => {
+      try {
+        const token = localStorage.getItem('boxsync_token');
+        const response = await fetch('/api/sync/apps', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.apps) {
+            // Transform app data to storage stats per user
+            const userMap = new Map<string, StorageStats>();
+            data.apps.forEach((app: any) => {
+              const existing = userMap.get(app.userId) || {
+                username: app.username || app.userId,
+                keyCount: 0,
+                memoryUsage: 0,
+                lastSyncTime: 0,
+              };
+              existing.keyCount += app.keyCount || 0;
+              existing.memoryUsage += app.memoryUsage || 0;
+              if (app.lastSyncTime > existing.lastSyncTime) {
+                existing.lastSyncTime = app.lastSyncTime;
+              }
+              userMap.set(app.userId, existing);
+            });
+            setStorageStats(Array.from(userMap.values()));
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch storage data:', e);
+      } finally {
+        setLoading(false);
+      }
     };
-  });
+
+    fetchStorageData();
+  }, []);
+
+  // Get all users including admin
+  const allUsers = users;
+  const regularUsers = users.filter((u) => u.role === 'user');
+  const adminUser = users.find((u) => u.role === 'admin');
 
   const totalKeys = storageStats.reduce((sum, s) => sum + s.keyCount, 0);
   const totalMemory = storageStats.reduce((sum, s) => sum + s.memoryUsage, 0);
@@ -49,27 +87,7 @@ export default function StorageView() {
             Redis 用户同步数据
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            展示各普通用户在 Redis 数据库中的同步数据占用情况
-          </p>
-        </div>
-      </div>
-
-      {/* Admin Data Notice Banner */}
-      <div
-        className="rounded-xl p-4 flex items-start gap-3"
-        style={{
-          backgroundColor: 'rgba(245, 158, 11, 0.08)',
-          border: '1px solid rgba(245, 158, 11, 0.2)',
-        }}
-      >
-        <Shield className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: '#f59e0b' }} />
-        <div>
-          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-            管理员数据存储说明
-          </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-            管理员账户信息（用户名、密码）通过本地持久化存储（localStorage）管理，不存储在 Redis 数据库中。
-            服务器设置同样通过本地持久化存储，与 Redis 用户同步数据完全隔离。
+            展示所有用户在 Redis 数据库中的同步数据占用情况
           </p>
         </div>
       </div>
@@ -88,7 +106,7 @@ export default function StorageView() {
             Redis 数据存储
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-            普通用户同步的数据存储在 Redis 数据库中（前缀：boxsync:data:&#123;userId&#125;:*）。
+            所有用户同步的数据存储在 Redis 数据库中（前缀：boxsync:data:&#123;userId&#125;:*）。
             支持多应用分区隔离，每个用户可为不同软件创建独立的同步数据分区。
           </p>
         </div>
@@ -148,8 +166,8 @@ export default function StorageView() {
             <Clock className="w-6 h-6" style={{ color: 'var(--accent-purple-light)' }} />
           </div>
           <div>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>普通用户数量</p>
-            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{regularUsers.length}</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>用户数量</p>
+            <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{allUsers.length}</p>
           </div>
         </div>
 
@@ -173,7 +191,73 @@ export default function StorageView() {
         </div>
       </div>
 
-      {/* User Partitions Detail - Dynamic from userStore */}
+      {/* Admin Storage Section */}
+      {adminUser && (
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <div className="px-6 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+            <Shield className="w-4 h-4" style={{ color: '#f59e0b' }} />
+            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+              管理员存储详情
+            </h2>
+          </div>
+          <table className="w-full">
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <th className="text-left px-6 py-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  用户名
+                </th>
+                <th className="text-left px-6 py-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  应用分区数
+                </th>
+                <th className="text-left px-6 py-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  分区列表
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <td className="px-6 py-4 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {adminUser.username}
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
+                    管理员
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-primary)' }}>
+                  {partitions.find((p) => p.userId === adminUser.userId)?.appPartitions.length || 0}
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    {partitions.find((p) => p.userId === adminUser.userId)?.appPartitions.map((app) => (
+                      <span
+                        key={app.appId}
+                        className="text-xs px-2 py-1 rounded-full"
+                        style={{
+                          backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                          color: '#f59e0b',
+                        }}
+                      >
+                        {app.appName}
+                      </span>
+                    )) || (
+                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        暂无应用分区
+                      </span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* User Partitions Detail */}
       <div
         className="rounded-2xl overflow-hidden"
         style={{
@@ -183,7 +267,7 @@ export default function StorageView() {
       >
         <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
           <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-            用户应用分区详情
+            普通用户应用分区详情
           </h2>
         </div>
         <table className="w-full">
@@ -252,7 +336,7 @@ export default function StorageView() {
         </table>
       </div>
 
-      {/* Detail Table - Dynamic from userStore */}
+      {/* User Data Overview */}
       <div
         className="rounded-2xl overflow-hidden"
         style={{
@@ -283,7 +367,13 @@ export default function StorageView() {
             </tr>
           </thead>
           <tbody>
-            {storageStats.length > 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={4} className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  加载中...
+                </td>
+              </tr>
+            ) : storageStats.length > 0 ? (
               storageStats.map((stat) => (
                 <tr
                   key={stat.username}
@@ -307,7 +397,7 @@ export default function StorageView() {
             ) : (
               <tr>
                 <td colSpan={4} className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  暂无普通用户数据
+                  暂无用户数据
                 </td>
               </tr>
             )}

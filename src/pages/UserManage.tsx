@@ -1,16 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, UserCheck, UserX, Database } from 'lucide-react';
 import { useUserStore } from '@/stores/userStore';
 import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
 import type { User } from '@/types';
 
 export default function UserManage() {
-  const { users, addUser, updateUser, deleteUser, toggleStatus } = useUserStore();
+  const { users, fetchUsers, addUser, updateUser, deleteUser, toggleStatus, loading } = useUserStore();
   const { createPartition, deletePartition, getPartitionByUserId } = useUserPartitionsStore();
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showPasswordField, setShowPasswordField] = useState(false);
   const [formData, setFormData] = useState({ username: '', password: '', role: 'user' as 'admin' | 'user' });
+
+  // Load users on mount
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const adminCount = users.filter((u) => u.role === 'admin').length;
 
@@ -30,19 +35,19 @@ export default function UserManage() {
     setShowModal(true);
   };
 
-  const handleToggleStatus = (userId: string) => {
+  const handleToggleStatus = async (userId: string) => {
     const user = users.find((u) => u.userId === userId);
     if (user?.role === 'admin' && adminCount <= 1) {
       alert('不能禁用唯一的管理员账户');
       return;
     }
-    toggleStatus(userId);
+    await toggleStatus(userId);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingUser) {
-      updateUser(editingUser.userId, {
+      await updateUser(editingUser.userId, {
         username: formData.username,
         role: formData.role,
       });
@@ -50,37 +55,38 @@ export default function UserManage() {
         console.log('Password update for user:', editingUser.userId);
       }
     } else {
-      const newUserId = `user-${Date.now()}`;
-      const newUser: User = {
-        userId: newUserId,
+      const success = await addUser({
         username: formData.username,
         password: formData.password,
         role: formData.role,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        status: 'active',
-      };
-      addUser(newUser);
-      // Auto-create storage partition for new user
-      createPartition(newUserId, formData.username);
+      });
+      if (success) {
+        // Auto-create storage partition for new user
+        createPartition(`user-${Date.now()}`, formData.username);
+      }
     }
     setShowModal(false);
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
     const user = users.find((u) => u.userId === userId);
     if (user?.role === 'admin' && adminCount <= 1) {
       alert('不能删除唯一的管理员账户');
       return;
     }
     if (confirm('确定要删除该用户吗？此操作将同时删除该用户的所有存储数据，不可恢复。')) {
-      // Use setTimeout to avoid state update during render
-      setTimeout(() => {
-        deleteUser(userId);
-        deletePartition(userId);
-      }, 0);
+      await deleteUser(userId);
+      deletePartition(userId);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">

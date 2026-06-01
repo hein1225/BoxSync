@@ -1,89 +1,124 @@
 import { create } from 'zustand';
 import type { User } from '@/types';
 
-const USERS_STORAGE_KEY = 'boxsync_users';
-
-const defaultUsers: User[] = [
-  {
-    userId: 'user-001',
-    username: 'admin',
-    role: 'admin',
-    createdAt: 1717000000000,
-    updatedAt: 1717000000000,
-    status: 'active',
-  },
-];
-
-function loadUsers(): User[] {
-  try {
-    const saved = localStorage.getItem(USERS_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {
-    // ignore
-  }
-  return [...defaultUsers];
-}
-
-function saveUsers(users: User[]) {
-  try {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  } catch (e) {
-    console.error('save users failed:', e);
-  }
-}
-
 interface UserState {
   users: User[];
-  setUsers: (users: User[]) => void;
-  addUser: (user: User) => void;
-  updateUser: (userId: string, updates: Partial<User>) => void;
-  deleteUser: (userId: string) => void;
-  toggleStatus: (userId: string) => void;
+  loading: boolean;
+  error: string | null;
+  fetchUsers: () => Promise<void>;
+  addUser: (user: { username: string; password: string; role: 'admin' | 'user' }) => Promise<boolean>;
+  updateUser: (userId: string, updates: Partial<User>) => Promise<boolean>;
+  deleteUser: (userId: string) => Promise<boolean>;
+  toggleStatus: (userId: string) => Promise<boolean>;
 }
 
-export const useUserStore = create<UserState>((set) => ({
-  users: loadUsers(),
+export const useUserStore = create<UserState>((set, get) => ({
+  users: [],
+  loading: false,
+  error: null,
 
-  setUsers: (users) => {
-    saveUsers(users);
-    set({ users });
+  fetchUsers: async () => {
+    try {
+      set({ loading: true, error: null });
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch('/api/users', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.users) {
+          set({ users: data.users, loading: false });
+        }
+      } else {
+        set({ error: 'Failed to fetch users', loading: false });
+      }
+    } catch (e) {
+      set({ error: 'Network error', loading: false });
+    }
   },
 
-  addUser: (user) => {
-    set((state) => {
-      const updated = [...state.users, user];
-      saveUsers(updated);
-      return { users: updated };
-    });
+  addUser: async (userData) => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(userData),
+      });
+
+      if (response.ok) {
+        await get().fetchUsers();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   },
 
-  updateUser: (userId, updates) => {
-    set((state) => {
-      const updated = state.users.map((u) =>
-        u.userId === userId ? { ...u, ...updates, updatedAt: Date.now() } : u
-      );
-      saveUsers(updated);
-      return { users: updated };
-    });
+  updateUser: async (userId, updates) => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (response.ok) {
+        await get().fetchUsers();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   },
 
-  deleteUser: (userId) => {
-    set((state) => {
-      const updated = state.users.filter((u) => u.userId !== userId);
-      saveUsers(updated);
-      return { users: updated };
-    });
+  deleteUser: async (userId) => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await get().fetchUsers();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   },
 
-  toggleStatus: (userId) => {
-    set((state) => {
-      const updated = state.users.map((u) =>
-        u.userId === userId
-          ? { ...u, status: u.status === 'active' ? 'disabled' : 'active' as 'active' | 'disabled' }
-          : u
-      );
-      saveUsers(updated);
-      return { users: updated };
-    });
+  toggleStatus: async (userId) => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
+      const response = await fetch(`/api/users/${userId}/status`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await get().fetchUsers();
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
   },
 }));

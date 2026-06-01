@@ -12,8 +12,8 @@ export default defineConfig(({ mode }) => {
       sourcemap: 'hidden',
     },
     define: {
-      'import.meta.env.VITE_ADMIN_USERNAME': JSON.stringify(env.ADMIN_USERNAME || 'admin'),
-      'import.meta.env.VITE_ADMIN_PASSWORD': JSON.stringify(env.ADMIN_PASSWORD || 'admin123'),
+      // Admin credentials are hardcoded in backend, not configurable via env vars
+      'import.meta.env.VITE_APP_NAME': JSON.stringify('BoxSync'),
     },
     server: {
       proxy: {
