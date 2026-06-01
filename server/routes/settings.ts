@@ -86,20 +86,39 @@ router.post('/reset', authMiddleware, adminMiddleware, async (req, res, next) =>
 router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const redisClient = getRedisClient();
+
+    // 1. Export settings
     const settingsData = await redisClient.get(SETTINGS_KEY);
     const settings = settingsData ? JSON.parse(settingsData) : {};
+
+    // 2. Export users (with password)
     const usersData = await redisClient.hGetAll('boxsync:users');
-    const users = Object.values(usersData).map((u) => {
-      const user = JSON.parse(u);
-      delete (user as Record<string, unknown>).password;
-      return user;
-    });
+    const users = Object.values(usersData).map((u) => JSON.parse(u));
+
+    // 3. Export user partitions
+    const partitionsData = await redisClient.hGetAll('boxsync:partitions');
+    const partitions: Record<string, unknown[]> = {};
+    for (const [userId, data] of Object.entries(partitionsData)) {
+      partitions[userId] = JSON.parse(data);
+    }
+
+    // 4. Export sync data
+    const syncData: Record<string, unknown> = {};
+    const dataKeys = await redisClient.keys('boxsync:data:*');
+    for (const key of dataKeys) {
+      const data = await redisClient.get(key);
+      if (data) {
+        syncData[key] = JSON.parse(data);
+      }
+    }
 
     const exportData = {
-      version: '1.0',
+      version: '1.1',
       exportTime: new Date().toISOString(),
       settings: { ...defaultSettings, ...settings },
       users,
+      partitions,
+      syncData,
     };
 
     res.json({
@@ -111,19 +130,37 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
   }
 });
 
-// Import settings (admin only)
+// Import settings (admin only) - 完全覆盖模式
 router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const currentUser = req.user!;
 
   try {
     const redisClient = getRedisClient();
-    const { settings, users } = req.body;
+    const { settings, users, partitions, syncData } = req.body;
 
+    // Step 1: 清除所有现有数据（完全覆盖模式）
+    // 1.1 清除所有用户数据
+    await redisClient.del('boxsync:users');
+    // 1.2 清除所有分区数据
+    await redisClient.del('boxsync:partitions');
+    // 1.3 清除所有同步数据
+    const existingDataKeys = await redisClient.keys('boxsync:data:*');
+    for (const key of existingDataKeys) {
+      await redisClient.del(key);
+    }
+    // 1.4 清除所有会话（强制所有用户重新登录）
+    const sessionKeys = await redisClient.keys('boxsync:session:*');
+    for (const key of sessionKeys) {
+      await redisClient.del(key);
+    }
+
+    // Step 2: 恢复设置
     if (settings) {
       await redisClient.set(SETTINGS_KEY, JSON.stringify(settings));
     }
 
+    // Step 3: 恢复用户（包含密码）
     if (users && Array.isArray(users)) {
       for (const user of users) {
         if (user.userId && user.username) {
@@ -132,11 +169,27 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     }
 
-    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份，包含 ${users?.length || 0} 个用户`, currentUser.userId, currentUser.username, ip, true);
+    // Step 4: 恢复分区数据
+    if (partitions && typeof partitions === 'object') {
+      for (const [userId, data] of Object.entries(partitions)) {
+        if (Array.isArray(data)) {
+          await redisClient.hSet('boxsync:partitions', userId, JSON.stringify(data));
+        }
+      }
+    }
+
+    // Step 5: 恢复同步数据
+    if (syncData && typeof syncData === 'object') {
+      for (const [key, data] of Object.entries(syncData)) {
+        await redisClient.set(key, JSON.stringify(data));
+      }
+    }
+
+    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份，覆盖所有数据：${users?.length || 0} 个用户`, currentUser.userId, currentUser.username, ip, true);
 
     res.json({
       success: true,
-      message: 'Settings imported successfully',
+      message: 'Backup restored successfully. All existing data has been replaced.',
     });
   } catch (error) {
     await logAdmin('import', `管理员 ${currentUser.username} 恢复备份失败`, currentUser.userId, currentUser.username, ip, false, (error as Error).message);
