@@ -1,8 +1,22 @@
-import { Server, Shield, Clock, Code } from 'lucide-react';
+import { useState } from 'react';
+import { Server, Shield, Clock, Code, Terminal, Copy, CheckCircle, Link } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 export default function About() {
   const settings = useSettingsStore((state) => state.settings);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // 获取后端 API 地址
+  const serverUrl = window.location.hostname === 'localhost'
+    ? 'http://localhost:9390'
+    : `${window.location.protocol}//${window.location.host}`;
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
 
   const serverInfo = [
     { label: '服务器名称', value: settings.serverName, icon: Server },
@@ -64,6 +78,185 @@ export default function About() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Software Development Guide */}
+      <div
+        className="rounded-2xl p-6"
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <Terminal className="w-5 h-5" style={{ color: 'var(--accent-purple-light)' }} />
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+            使用云同步软件开发指引
+          </h2>
+        </div>
+
+        <div className="space-y-4">
+          {/* Server URL */}
+          <div>
+            <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              服务器地址
+            </label>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-mono"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {serverUrl}
+              </div>
+              <button
+                onClick={() => handleCopy(serverUrl, 'url')}
+                className="px-3 py-2.5 rounded-xl text-sm transition-all duration-200"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {copied === 'url' ? (
+                  <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* API Endpoints */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                登录接口
+              </label>
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-mono truncate"
+                  style={{
+                    backgroundColor: 'var(--bg-input)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  {serverUrl}/api/auth/login
+                </div>
+                <button
+                  onClick={() => handleCopy(`${serverUrl}/api/auth/login`, 'login')}
+                  className="px-3 py-2.5 rounded-xl text-sm transition-all duration-200"
+                  style={{
+                    backgroundColor: 'var(--bg-input)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  {copied === 'login' ? (
+                    <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                数据同步接口
+              </label>
+              <div className="flex items-center gap-2">
+                <div
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-mono truncate"
+                  style={{
+                    backgroundColor: 'var(--bg-input)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  {serverUrl}/api/sync/write
+                </div>
+                <button
+                  onClick={() => handleCopy(`${serverUrl}/api/sync/write`, 'sync')}
+                  className="px-3 py-2.5 rounded-xl text-sm transition-all duration-200"
+                  style={{
+                    backgroundColor: 'var(--bg-input)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  {copied === 'sync' ? (
+                    <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Start Code */}
+          <div>
+            <label className="block text-sm mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+              快速接入示例
+            </label>
+            <div className="relative">
+              <pre
+                className="px-4 py-3 rounded-xl text-xs font-mono overflow-x-auto"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+{`// 1. 登录获取 Token
+const res = await fetch('${serverUrl}/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ username: 'admin', password: 'admin123' })
+});
+const { token } = await res.json();
+
+// 2. 写入同步数据
+await fetch('${serverUrl}/api/sync/write', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + token
+  },
+  body: JSON.stringify({
+    appId: 'myapp',
+    key: 'settings.theme',
+    value: 'dark'
+  })
+});`}
+              </pre>
+              <button
+                onClick={() => handleCopy(`// 1. 登录获取 Token\nconst res = await fetch('${serverUrl}/api/auth/login', {\n  method: 'POST',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({ username: 'admin', password: 'admin123' })\n});\nconst { token } = await res.json();\n\n// 2. 写入同步数据\nawait fetch('${serverUrl}/api/sync/write', {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/json',\n    'Authorization': 'Bearer ' + token\n  },\n  body: JSON.stringify({\n    appId: 'myapp',\n    key: 'settings.theme',\n    value: 'dark'\n  })\n});`, 'code')}
+                className="absolute top-2 right-2 px-2 py-1 rounded-lg text-xs transition-all duration-200"
+                style={{
+                  backgroundColor: 'rgba(124, 58, 237, 0.2)',
+                  color: 'var(--accent-purple-light)',
+                }}
+              >
+                {copied === 'code' ? '已复制' : '复制'}
+              </button>
+            </div>
+          </div>
+
+          {/* API Doc Link */}
+          <div
+            className="flex items-center gap-2 text-sm"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            <Link className="w-4 h-4" />
+            <span>完整 API 文档请参考项目 README.md</span>
+          </div>
+        </div>
       </div>
 
       <div

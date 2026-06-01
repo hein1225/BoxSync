@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Users, Database, Layers, Clock, TrendingUp, Activity, Server } from 'lucide-react';
+import { Users, Database, Layers, Clock, TrendingUp, Activity, Server, Terminal, Link, Copy, CheckCircle } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { useUserStore } from '@/stores/userStore';
 import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
@@ -21,6 +21,21 @@ export default function Dashboard() {
     address: string;
     mode: string;
   }>({ status: 'checking', address: '检测中...', mode: '' });
+
+  const [copied, setCopied] = useState<string | null>(null);
+  // 获取后端 API 地址（生产环境使用当前域名，开发环境使用代理）
+  const serverUrl = typeof window !== 'undefined'
+    ? (window.location.hostname === 'localhost'
+      ? 'http://localhost:9390'
+      : `${window.location.protocol}//${window.location.host}`)
+    : '';
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
 
   // Load all data on mount
   useEffect(() => {
@@ -363,6 +378,127 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* User Connection Info */}
+      <div
+        className="rounded-2xl p-6"
+        style={{
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-color)',
+        }}
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <Server className="w-5 h-5" style={{ color: 'var(--accent-purple-light)' }} />
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+            用户连接信息
+          </h2>
+        </div>
+
+        <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+          请将此 API 地址告知用户，用于在第三方软件中配置云同步：
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+              服务器地址
+            </label>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-mono"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {serverUrl}
+              </div>
+              <button
+                onClick={() => handleCopy(serverUrl, 'url')}
+                className="px-3 py-2.5 rounded-xl text-sm transition-all duration-200"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {copied === 'url' ? (
+                  <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+              登录接口
+            </label>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-mono"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {serverUrl}/api/auth/login
+              </div>
+              <button
+                onClick={() => handleCopy(`${serverUrl}/api/auth/login`, 'login')}
+                className="px-3 py-2.5 rounded-xl text-sm transition-all duration-200"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {copied === 'login' ? (
+                  <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+              数据同步接口
+            </label>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-mono"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {serverUrl}/api/sync/write
+              </div>
+              <button
+                onClick={() => handleCopy(`${serverUrl}/api/sync/write`, 'sync')}
+                className="px-3 py-2.5 rounded-xl text-sm transition-all duration-200"
+                style={{
+                  backgroundColor: 'var(--bg-input)',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                {copied === 'sync' ? (
+                  <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

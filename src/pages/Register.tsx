@@ -13,7 +13,10 @@ export default function Register() {
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const serverUrl = `${window.location.origin}/api`;
+  // 获取服务器基础地址（客户端软件只需输入此地址，API 路径由软件内部拼接）
+  const serverUrl = window.location.hostname === 'localhost'
+    ? 'http://localhost:9390'
+    : `${window.location.origin}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
