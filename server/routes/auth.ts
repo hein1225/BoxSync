@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { getRedisClient } from '../db.js';
 import { generateToken } from '../middleware/auth.js';
 import { createError } from '../middleware/error.js';
+import { logAuth } from '../utils/logger.js';
 
 const router = Router();
 const ADMIN_KEY = 'boxsync:admin';
@@ -36,10 +37,13 @@ export async function initAdmin() {
 
 // Login
 router.post('/login', async (req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const { username, password } = req.body;
+
   try {
     const redisClient = getRedisClient();
-    const { username, password } = req.body;
     if (!username || !password) {
+      await logAuth('login', '登录失败：用户名或密码为空', 'unknown', username || 'unknown', ip, false, '用户名或密码为空');
       throw createError('Username and password are required', 400, 'INVALID_INPUT');
     }
 
@@ -49,6 +53,7 @@ router.post('/login', async (req, res, next) => {
     if (adminData && adminData.username === username) {
       const valid = await bcrypt.compare(password, adminData.password);
       if (!valid) {
+        await logAuth('login', `登录失败：管理员 ${username} 密码错误`, adminData.userId, username, ip, false, '密码错误');
         throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
       }
 
@@ -58,6 +63,8 @@ router.post('/login', async (req, res, next) => {
         username: adminData.username,
         role: adminData.role,
       }));
+
+      await logAuth('login', `管理员 ${username} 登录成功`, adminData.userId, username, ip, true);
 
       res.json({
         success: true,
@@ -76,11 +83,13 @@ router.post('/login', async (req, res, next) => {
     const user = users.find((u) => u.username === username);
 
     if (!user || user.status === 'disabled') {
+      await logAuth('login', `登录失败：用户 ${username} 不存在或已禁用`, user?.userId || 'unknown', username, ip, false, '用户不存在或已禁用');
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
+      await logAuth('login', `登录失败：用户 ${username} 密码错误`, user.userId, username, ip, false, '密码错误');
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -90,6 +99,8 @@ router.post('/login', async (req, res, next) => {
       username: user.username,
       role: user.role,
     }));
+
+    await logAuth('login', `用户 ${username} 登录成功`, user.userId, username, ip, true);
 
     res.json({
       success: true,
@@ -105,9 +116,11 @@ router.post('/login', async (req, res, next) => {
 
 // Register
 router.post('/register', async (req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const { username, password } = req.body;
+
   try {
     const redisClient = getRedisClient();
-    const { username, password } = req.body;
     if (!username || !password) {
       throw createError('Username and password are required', 400, 'INVALID_INPUT');
     }
@@ -116,6 +129,7 @@ router.post('/register', async (req, res, next) => {
     const settingsData = await redisClient.get('boxsync:settings');
     const settings = settingsData ? JSON.parse(settingsData) : { allowRegistration: false };
     if (!settings.allowRegistration) {
+      await logAuth('register', `注册失败：用户 ${username} 尝试注册但注册已关闭`, 'unknown', username, ip, false, '注册已关闭');
       throw createError('Registration is disabled', 403, 'REGISTRATION_DISABLED');
     }
 
@@ -123,10 +137,11 @@ router.post('/register', async (req, res, next) => {
     const usersData = await redisClient.hGetAll('boxsync:users');
     const users = Object.values(usersData).map((u) => JSON.parse(u));
     if (users.some((u) => u.username === username)) {
+      await logAuth('register', `注册失败：用户名 ${username} 已存在`, 'unknown', username, ip, false, '用户名已存在');
       throw createError('Username already exists', 409, 'USERNAME_EXISTS');
     }
 
-    const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = {
       userId,
@@ -148,6 +163,8 @@ router.post('/register', async (req, res, next) => {
       createdAt: Date.now(),
     }));
 
+    await logAuth('register', `用户 ${username} 注册成功`, userId, username, ip, true);
+
     res.json({
       success: true,
       message: 'User registered successfully',
@@ -161,11 +178,19 @@ router.post('/register', async (req, res, next) => {
 
 // Logout - invalidate session
 router.post('/logout', async (req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+
   try {
     const redisClient = getRedisClient();
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
+      // Get user info before deleting session
+      const sessionData = await redisClient.get(`${SESSION_PREFIX}${token}`);
+      if (sessionData) {
+        const session = JSON.parse(sessionData);
+        await logAuth('logout', `用户 ${session.username} 登出`, session.userId, session.username, ip, true);
+      }
       await redisClient.del(`${SESSION_PREFIX}${token}`);
     }
     res.json({ success: true, message: 'Logged out successfully' });

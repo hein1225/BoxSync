@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getRedisClient } from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { createError } from '../middleware/error.js';
+import { logSync } from '../utils/logger.js';
 import type { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -10,12 +11,16 @@ const META_SUFFIX = ':_meta';
 
 // Write data
 router.post('/write', authMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const user = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const { appId, key, value, timestamp } = req.body;
-    const userId = req.user!.userId;
+    const userId = user.userId;
 
     if (!appId || !key || value === undefined) {
+      await logSync('write', `写入数据失败：缺少必要参数`, userId, user.username, ip, false, undefined, '缺少 appId、key 或 value');
       throw createError('appId, key and value are required', 400, 'INVALID_INPUT');
     }
 
@@ -39,6 +44,8 @@ router.post('/write', authMiddleware, async (req: AuthRequest, res, next) => {
     }
     meta.lastSyncTime = Date.now();
     await redisClient.set(metaKey, JSON.stringify(meta));
+
+    await logSync('write', `用户 ${user.username} 写入数据：${appId}/${key}`, userId, user.username, ip, true, req.headers['user-agent']);
 
     res.json({
       success: true,
@@ -82,12 +89,16 @@ router.get('/read', authMiddleware, async (req: AuthRequest, res, next) => {
 
 // Batch sync
 router.post('/batch', authMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const user = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const { appId, changes } = req.body;
-    const userId = req.user!.userId;
+    const userId = user.userId;
 
     if (!appId || !Array.isArray(changes)) {
+      await logSync('batch', `批量同步失败：缺少必要参数`, userId, user.username, ip, false, undefined, '缺少 appId 或 changes');
       throw createError('appId and changes array are required', 400, 'INVALID_INPUT');
     }
 
@@ -119,6 +130,8 @@ router.post('/batch', authMiddleware, async (req: AuthRequest, res, next) => {
     meta.keyCount = meta.keys.length;
     meta.lastSyncTime = Date.now();
     await redisClient.set(metaKey, JSON.stringify(meta));
+
+    await logSync('batch', `用户 ${user.username} 批量同步：${appId}，${changes.length} 条数据`, userId, user.username, ip, true, req.headers['user-agent']);
 
     res.json({
       success: true,

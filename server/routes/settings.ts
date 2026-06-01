@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { getRedisClient } from '../db.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
+import { logAdmin } from '../utils/logger.js';
+import type { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 const SETTINGS_KEY = 'boxsync:settings';
@@ -38,7 +40,10 @@ router.get('/', authMiddleware, async (req, res, next) => {
 });
 
 // Update settings (admin only)
-router.put('/', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.put('/', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentUser = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const settingsData = await redisClient.get(SETTINGS_KEY);
@@ -46,6 +51,10 @@ router.put('/', authMiddleware, adminMiddleware, async (req, res, next) => {
     const updated = { ...current, ...req.body };
 
     await redisClient.set(SETTINGS_KEY, JSON.stringify(updated));
+
+    // Log which settings were changed
+    const changedKeys = Object.keys(req.body);
+    await logAdmin('update_settings', `管理员 ${currentUser.username} 修改设置：${changedKeys.join(', ')}`, currentUser.userId, currentUser.username, ip, true);
 
     res.json({
       success: true,

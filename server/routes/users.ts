@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { getRedisClient } from '../db.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
 import { createError } from '../middleware/error.js';
+import { logAdmin } from '../utils/logger.js';
 import type { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -58,7 +59,10 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res, next) => {
 });
 
 // Create user (admin only)
-router.post('/', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.post('/', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentUser = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const { username, password, role = 'user' } = req.body;
@@ -69,10 +73,11 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res, next) => {
     const usersData = await redisClient.hGetAll('boxsync:users');
     const users = Object.values(usersData).map((u) => JSON.parse(u));
     if (users.some((u) => u.username === username)) {
+      await logAdmin('create_user', `创建用户失败：用户名 ${username} 已存在`, currentUser.userId, currentUser.username, ip, false, '用户名已存在');
       throw createError('Username already exists', 409, 'USERNAME_EXISTS');
     }
 
-    const userId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = {
       userId,
@@ -94,6 +99,8 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res, next) => {
       createdAt: Date.now(),
     }));
 
+    await logAdmin('create_user', `管理员 ${currentUser.username} 创建用户 ${username}（角色：${role}）`, currentUser.userId, currentUser.username, ip, true);
+
     res.json({
       success: true,
       message: 'User created successfully',
@@ -105,7 +112,10 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res, next) => {
 });
 
 // Update user (admin only)
-router.put('/:userId', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.put('/:userId', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentUser = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const userId = req.params.userId as string;
@@ -113,16 +123,20 @@ router.put('/:userId', authMiddleware, adminMiddleware, async (req, res, next) =
 
     const userData = await redisClient.hGet('boxsync:users', userId);
     if (!userData) {
+      await logAdmin('update_user', `更新用户失败：用户 ${userId} 不存在`, currentUser.userId, currentUser.username, ip, false, '用户不存在');
       throw createError('User not found', 404, 'USER_NOT_FOUND');
     }
 
     const user = JSON.parse(userData);
+    const oldUsername = user.username;
     if (username) user.username = username;
     if (role) user.role = role;
     if (status) user.status = status;
     user.updatedAt = Date.now();
 
     await redisClient.hSet('boxsync:users', userId, JSON.stringify(user));
+
+    await logAdmin('update_user', `管理员 ${currentUser.username} 更新用户 ${oldUsername} 的信息`, currentUser.userId, currentUser.username, ip, true);
 
     res.json({
       success: true,
@@ -135,21 +149,28 @@ router.put('/:userId', authMiddleware, adminMiddleware, async (req, res, next) =
 });
 
 // Toggle user status (admin only)
-router.patch('/:userId/status', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.patch('/:userId/status', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentUser = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const userId = req.params.userId as string;
 
     const userData = await redisClient.hGet('boxsync:users', userId);
     if (!userData) {
+      await logAdmin('toggle_status', `切换用户状态失败：用户 ${userId} 不存在`, currentUser.userId, currentUser.username, ip, false, '用户不存在');
       throw createError('User not found', 404, 'USER_NOT_FOUND');
     }
 
     const user = JSON.parse(userData);
-    user.status = user.status === 'active' ? 'disabled' : 'active';
+    const newStatus = user.status === 'active' ? 'disabled' : 'active';
+    user.status = newStatus;
     user.updatedAt = Date.now();
 
     await redisClient.hSet('boxsync:users', userId, JSON.stringify(user));
+
+    await logAdmin('toggle_status', `管理员 ${currentUser.username} ${newStatus === 'active' ? '启用' : '禁用'}用户 ${user.username}`, currentUser.userId, currentUser.username, ip, true);
 
     res.json({
       success: true,
@@ -162,15 +183,22 @@ router.patch('/:userId/status', authMiddleware, adminMiddleware, async (req, res
 });
 
 // Delete user (admin only)
-router.delete('/:userId', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.delete('/:userId', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const currentUser = req.user!;
+
   try {
     const redisClient = getRedisClient();
     const userId = req.params.userId as string;
 
     const userData = await redisClient.hGet('boxsync:users', userId);
     if (!userData) {
+      await logAdmin('delete_user', `删除用户失败：用户 ${userId} 不存在`, currentUser.userId, currentUser.username, ip, false, '用户不存在');
       throw createError('User not found', 404, 'USER_NOT_FOUND');
     }
+
+    const user = JSON.parse(userData);
+    const deletedUsername = user.username;
 
     await redisClient.hDel('boxsync:users', userId);
     await redisClient.hDel('boxsync:partitions', userId);
@@ -182,6 +210,8 @@ router.delete('/:userId', authMiddleware, adminMiddleware, async (req, res, next
         await redisClient.del(key);
       }
     }
+
+    await logAdmin('delete_user', `管理员 ${currentUser.username} 删除用户 ${deletedUsername}`, currentUser.userId, currentUser.username, ip, true);
 
     res.json({
       success: true,

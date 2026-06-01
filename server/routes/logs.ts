@@ -49,7 +49,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
     const user = req.user!;
 
     const logEntry = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
       timestamp: Date.now(),
       type,
       action,
