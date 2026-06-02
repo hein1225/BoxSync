@@ -104,37 +104,48 @@ export default function BackupRestore() {
       const { data } = pendingFile;
       const token = localStorage.getItem('boxsync_token');
 
-      // Import settings via API
+      // 构建后端期望的备份数据结构
+      // 后端期望: { settings, users, partitions, syncData }
+      const importPayload: Record<string, unknown> = {};
+
       if (data.settings) {
-        await fetch('/api/settings/import', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ settings: data.settings }),
-        });
+        importPayload.settings = data.settings;
       }
 
-      // Import users via API
       if (data.users && Array.isArray(data.users)) {
-        for (const user of data.users) {
-          const u = user as Record<string, unknown>;
-          if (u.userId && u.username && u.password) {
-            await fetch('/api/users', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                username: String(u.username),
-                password: String(u.password),
-                role: (u.role as string) || 'user',
-              }),
-            });
+        importPayload.users = data.users;
+      }
+
+      // 分区数据在 data.partitions，但后端期望的是对象格式 { userId: partition[] }
+      if (data.partitions && Array.isArray(data.partitions)) {
+        // 转换分区数据为后端期望的格式
+        const partitionsObj: Record<string, unknown[]> = {};
+        for (const partition of data.partitions) {
+          const p = partition as Record<string, unknown>;
+          if (p.userId) {
+            const userId = String(p.userId);
+            if (!partitionsObj[userId]) {
+              partitionsObj[userId] = [];
+            }
+            partitionsObj[userId].push(partition);
           }
         }
+        importPayload.partitions = partitionsObj;
+      }
+
+      // 调用后端统一的导入接口
+      const response = await fetch('/api/settings/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(importPayload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: '导入失败' }));
+        throw new Error(errorData.message || '导入失败');
       }
 
       setShowImportConfirm(false);
@@ -142,14 +153,12 @@ export default function BackupRestore() {
       setImportSuccess(true);
       setTimeout(() => setImportSuccess(false), 3000);
 
-      // Refresh data after import
+      // Refresh page to get latest data after import
       setTimeout(() => {
-        fetchUsers();
-        fetchSettings();
         window.location.reload();
       }, 1500);
-    } catch {
-      setImportError('导入过程中发生错误');
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : '导入过程中发生错误');
     }
   };
 
