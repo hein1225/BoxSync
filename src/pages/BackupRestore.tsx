@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Download, Upload, AlertTriangle, CheckCircle, FileJson } from 'lucide-react';
+import { Download, Upload, AlertTriangle, CheckCircle, FileJson, Loader2 } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useUserStore } from '@/stores/userStore';
 import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
@@ -11,8 +11,8 @@ interface BackupData {
   data: {
     settings?: Record<string, unknown>;
     users?: unknown[];
-    partitions?: unknown[];
-    logs?: unknown[];
+    partitions?: Record<string, unknown[]>;
+    syncData?: Record<string, unknown>;
   };
 }
 
@@ -22,6 +22,8 @@ export default function BackupRestore() {
   const [importSuccess, setImportSuccess] = useState(false);
   const [importError, setImportError] = useState('');
   const [pendingFile, setPendingFile] = useState<BackupData | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const settings = useSettingsStore((state) => state.settings);
@@ -41,28 +43,46 @@ export default function BackupRestore() {
     fetchSettings();
   }, [fetchUsers, fetchPartitions, fetchLogs, fetchSettings]);
 
-  const handleExport = () => {
-    const backupData: BackupData = {
-      exportTime: new Date().toISOString(),
-      version: '1.0.0',
-      data: {
-        settings: { ...settings },
-        users: [...users],
-        partitions: [...partitions],
-        logs: [...logs],
-      },
-    };
+  const handleExport = async () => {
+    try {
+      const token = localStorage.getItem('boxsync_token');
 
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `boxsync_backup_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+      // 从后端 API 获取完整的备份数据（包含密码等敏感信息）
+      const response = await fetch('/api/settings/export', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
 
-    setExportSuccess(true);
-    setTimeout(() => setExportSuccess(false), 3000);
+      if (!response.ok) {
+        throw new Error('导出失败');
+      }
+
+      const result = await response.json();
+
+      if (!result.success || !result.data) {
+        throw new Error('导出数据格式错误');
+      }
+
+      const backupData = {
+        exportTime: new Date().toISOString(),
+        version: '1.1.0',
+        data: result.data,
+      };
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `boxsync_backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : '导出失败');
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,6 +120,9 @@ export default function BackupRestore() {
   const confirmImport = async () => {
     if (!pendingFile) return;
 
+    setIsImporting(true);
+    setImportProgress('正在准备数据...');
+
     try {
       const { data } = pendingFile;
       const token = localStorage.getItem('boxsync_token');
@@ -116,22 +139,17 @@ export default function BackupRestore() {
         importPayload.users = data.users;
       }
 
-      // 分区数据在 data.partitions，但后端期望的是对象格式 { userId: partition[] }
-      if (data.partitions && Array.isArray(data.partitions)) {
-        // 转换分区数据为后端期望的格式
-        const partitionsObj: Record<string, unknown[]> = {};
-        for (const partition of data.partitions) {
-          const p = partition as Record<string, unknown>;
-          if (p.userId) {
-            const userId = String(p.userId);
-            if (!partitionsObj[userId]) {
-              partitionsObj[userId] = [];
-            }
-            partitionsObj[userId].push(partition);
-          }
-        }
-        importPayload.partitions = partitionsObj;
+      // 分区数据已经是对象格式 { userId: partition[] }
+      if (data.partitions && typeof data.partitions === 'object') {
+        importPayload.partitions = data.partitions;
       }
+
+      // 转换同步数据格式
+      if (data.syncData && typeof data.syncData === 'object') {
+        importPayload.syncData = data.syncData;
+      }
+
+      setImportProgress('正在清除现有数据并恢复备份...');
 
       // 调用后端统一的导入接口
       const response = await fetch('/api/settings/import', {
@@ -148,17 +166,32 @@ export default function BackupRestore() {
         throw new Error(errorData.message || '导入失败');
       }
 
+      const result = await response.json();
+
+      setImportProgress('恢复完成，正在清理本地会话...');
+
+      // 清除本地 token（因为服务器端会话已被清除）
+      localStorage.removeItem('boxsync_token');
+      localStorage.removeItem('boxsync_session_time');
+
       setShowImportConfirm(false);
       setPendingFile(null);
       setImportSuccess(true);
-      setTimeout(() => setImportSuccess(false), 3000);
 
-      // Refresh page to get latest data after import
+      // 显示恢复统计
+      const stats = result.stats;
+      if (stats) {
+        setImportProgress(`恢复完成：${stats.users} 个用户, ${stats.partitions} 个分区, ${stats.syncData} 条同步数据`);
+      }
+
+      // 延迟后跳转到登录页
       setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+        window.location.href = '/login';
+      }, 3000);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : '导入过程中发生错误');
+      setIsImporting(false);
+      setImportProgress('');
     }
   };
 
@@ -312,7 +345,7 @@ export default function BackupRestore() {
       </div>
 
       {/* Import Confirm Modal */}
-      {showImportConfirm && pendingFile && (
+      {showImportConfirm && pendingFile && !isImporting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div
             className="w-full max-w-md p-6 rounded-2xl animate-fade-in"
@@ -358,20 +391,20 @@ export default function BackupRestore() {
                 {pendingFile.data.partitions && (
                   <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
                     <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
-                    存储分区 ({(pendingFile.data.partitions as unknown[]).length} 个分区)
+                    存储分区 ({Object.keys(pendingFile.data.partitions).length} 个用户分区)
                   </div>
                 )}
-                {pendingFile.data.logs && (
+                {pendingFile.data.syncData && (
                   <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}>
                     <CheckCircle className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />
-                    操作日志 ({(pendingFile.data.logs as unknown[]).length} 条记录)
+                    同步数据 ({Object.keys(pendingFile.data.syncData).length} 条记录)
                   </div>
                 )}
               </div>
             </div>
 
             <p className="text-sm mb-6" style={{ color: 'var(--accent-red)' }}>
-              此操作将覆盖当前所有数据，是否继续？
+              此操作将清除所有现有数据（包括当前管理员账户）并恢复备份数据，恢复完成后需要重新登录。
             </p>
 
             <div className="flex gap-3">
@@ -394,6 +427,70 @@ export default function BackupRestore() {
                 确认导入
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Progress Modal */}
+      {isImporting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div
+            className="w-full max-w-md p-6 rounded-2xl animate-fade-in text-center"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div className="mb-4">
+              <Loader2 className="w-12 h-12 mx-auto animate-spin" style={{ color: 'var(--accent-purple)' }} />
+            </div>
+            <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+              正在恢复数据
+            </h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+              {importProgress}
+            </p>
+            <div
+              className="w-full h-2 rounded-full overflow-hidden"
+              style={{ backgroundColor: 'var(--bg-input)' }}
+            >
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{
+                  backgroundColor: 'var(--accent-purple)',
+                  width: importProgress.includes('完成') ? '100%' : importProgress.includes('清理') ? '80%' : '50%',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Success Modal */}
+      {importSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div
+            className="w-full max-w-md p-6 rounded-2xl animate-fade-in text-center"
+            style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
+              style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)' }}
+            >
+              <CheckCircle className="w-8 h-8" style={{ color: 'var(--accent-green)' }} />
+            </div>
+            <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+              恢复成功
+            </h2>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+              {importProgress}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              正在跳转到登录页面...
+            </p>
           </div>
         </div>
       )}
