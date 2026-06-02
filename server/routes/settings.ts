@@ -139,21 +139,40 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
     const redisClient = getRedisClient();
     const { settings, users, partitions, syncData } = req.body;
 
-    // Step 1: 清除所有现有数据（完全覆盖模式）
+    // Step 1: 清除所有现有数据（完全覆盖模式）- 使用 Promise.allSettled 确保即使部分删除失败也能继续
+    const deleteOperations: Promise<unknown>[] = [];
+
     // 1.1 清除所有用户数据
-    await redisClient.del('boxsync:users');
+    deleteOperations.push(redisClient.del('boxsync:users').catch(err => {
+      console.warn('[Import] Failed to delete users:', err);
+      return null;
+    }));
+
     // 1.2 清除所有分区数据
-    await redisClient.del('boxsync:partitions');
+    deleteOperations.push(redisClient.del('boxsync:partitions').catch(err => {
+      console.warn('[Import] Failed to delete partitions:', err);
+      return null;
+    }));
+
     // 1.3 清除所有同步数据
     const existingDataKeys = await redisClient.keys('boxsync:data:*');
     for (const key of existingDataKeys) {
-      await redisClient.del(key);
+      deleteOperations.push(redisClient.del(key).catch(err => {
+        console.warn(`[Import] Failed to delete sync data ${key}:`, err);
+        return null;
+      }));
     }
+
     // 1.4 清除所有会话（强制所有用户重新登录）
     const sessionKeys = await redisClient.keys('boxsync:session:*');
     for (const key of sessionKeys) {
-      await redisClient.del(key);
+      deleteOperations.push(redisClient.del(key).catch(err => {
+        console.warn(`[Import] Failed to delete session ${key}:`, err);
+        return null;
+      }));
     }
+
+    await Promise.allSettled(deleteOperations);
 
     // Step 2: 恢复设置
     if (settings) {
