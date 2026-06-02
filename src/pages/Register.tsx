@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserPlus, Lock, User, ArrowLeft, CheckCircle, AlertTriangle, Server, Copy } from 'lucide-react';
+import { UserPlus, Lock, User, ArrowLeft, CheckCircle, AlertTriangle, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '@/stores/userStore';
 import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
@@ -12,11 +12,6 @@ export default function Register() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
-
-  // 获取服务器基础地址（客户端软件只需输入此地址，API 路径由软件内部拼接）
-  const serverUrl = window.location.hostname === 'localhost'
-    ? 'http://localhost:9390'
-    : `${window.location.origin}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,7 +85,7 @@ export default function Register() {
             账户 <strong style={{ color: 'var(--text-primary)' }}>{formData.username}</strong> 已创建成功，存储分区已自动初始化。
           </p>
 
-          {/* Server URL Info */}
+          {/* Account Info */}
           <div
             className="rounded-xl p-4 mb-6 text-left"
             style={{
@@ -99,21 +94,15 @@ export default function Register() {
             }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <Server className="w-5 h-5" style={{ color: 'var(--accent-purple-light)' }} />
+              <CheckCircle className="w-5 h-5" style={{ color: 'var(--accent-purple-light)' }} />
               <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                在应用中使用
+                账户信息
               </span>
             </div>
             <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-              请在您的应用程序中配置以下服务器地址和账户信息：
+              您的账户已成功创建，请牢记以下信息：
             </p>
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>服务器地址</span>
-                <code className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)' }}>
-                  {serverUrl}
-                </code>
-              </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>用户名</span>
                 <code className="text-xs px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)' }}>
@@ -123,8 +112,7 @@ export default function Register() {
             </div>
             <button
               onClick={() => {
-                const config = `服务器地址: ${serverUrl}\n用户名: ${formData.username}`;
-                navigator.clipboard.writeText(config);
+                navigator.clipboard.writeText(formData.username);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
@@ -136,7 +124,7 @@ export default function Register() {
               }}
             >
               {copied ? <CheckCircle className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? '已复制配置信息' : '复制配置信息'}
+              {copied ? '已复制用户名' : '复制用户名'}
             </button>
           </div>
 
