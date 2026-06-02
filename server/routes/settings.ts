@@ -130,7 +130,7 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
   }
 });
 
-// Import settings (admin only) - 完全覆盖模式
+// Import settings (admin only) - 智能合并模式
 router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const currentUser = req.user!;
@@ -139,22 +139,26 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
     const redisClient = getRedisClient();
     const { settings, users, partitions, syncData } = req.body;
 
-    // Step 1: 清除所有现有数据（完全覆盖模式）- 使用 Promise.allSettled 确保即使部分删除失败也能继续
+    // Step 1: 备份当前管理员信息（确保恢复后管理员不会丢失）
+    const currentAdminData = await redisClient.hGet('boxsync:users', currentUser.userId);
+    const currentAdmin = currentAdminData ? JSON.parse(currentAdminData) : null;
+
+    // Step 2: 清除所有现有数据（完全覆盖模式）- 使用 Promise.allSettled 确保即使部分删除失败也能继续
     const deleteOperations: Promise<unknown>[] = [];
 
-    // 1.1 清除所有用户数据
+    // 2.1 清除所有用户数据
     deleteOperations.push(redisClient.del('boxsync:users').catch(err => {
       console.warn('[Import] Failed to delete users:', err);
       return null;
     }));
 
-    // 1.2 清除所有分区数据
+    // 2.2 清除所有分区数据
     deleteOperations.push(redisClient.del('boxsync:partitions').catch(err => {
       console.warn('[Import] Failed to delete partitions:', err);
       return null;
     }));
 
-    // 1.3 清除所有同步数据
+    // 2.3 清除所有同步数据
     const existingDataKeys = await redisClient.keys('boxsync:data:*');
     for (const key of existingDataKeys) {
       deleteOperations.push(redisClient.del(key).catch(err => {
@@ -163,32 +167,49 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }));
     }
 
-    // 1.4 清除所有会话（强制所有用户重新登录）
+    // 2.4 清除所有其他会话（保留当前管理员的会话）
     const sessionKeys = await redisClient.keys('boxsync:session:*');
     for (const key of sessionKeys) {
-      deleteOperations.push(redisClient.del(key).catch(err => {
-        console.warn(`[Import] Failed to delete session ${key}:`, err);
-        return null;
-      }));
+      // 保留当前管理员的会话
+      if (!key.includes(currentUser.userId)) {
+        deleteOperations.push(redisClient.del(key).catch(err => {
+          console.warn(`[Import] Failed to delete session ${key}:`, err);
+          return null;
+        }));
+      }
     }
 
     await Promise.allSettled(deleteOperations);
 
-    // Step 2: 恢复设置
+    // Step 3: 恢复设置
     if (settings) {
       await redisClient.set(SETTINGS_KEY, JSON.stringify(settings));
     }
 
-    // Step 3: 恢复用户（包含密码）
+    // Step 4: 恢复用户（包含密码）- 使用 Map 去重，以 userId 为准
+    const restoredUsers: Record<string, unknown> = {};
+
+    // 先添加备份中的用户
     if (users && Array.isArray(users)) {
       for (const user of users) {
         if (user.userId && user.username) {
-          await redisClient.hSet('boxsync:users', user.userId, JSON.stringify(user));
+          restoredUsers[user.userId] = user;
         }
       }
     }
 
-    // Step 4: 恢复分区数据
+    // 确保当前管理员用户存在（如果备份中没有，则保留原管理员）
+    if (currentAdmin && !restoredUsers[currentUser.userId]) {
+      restoredUsers[currentUser.userId] = currentAdmin;
+    }
+
+    // 写入用户数据
+    for (const user of Object.values(restoredUsers)) {
+      const u = user as { userId: string };
+      await redisClient.hSet('boxsync:users', u.userId, JSON.stringify(user));
+    }
+
+    // Step 5: 恢复分区数据
     if (partitions && typeof partitions === 'object') {
       for (const [userId, data] of Object.entries(partitions)) {
         if (Array.isArray(data)) {
@@ -197,14 +218,15 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     }
 
-    // Step 5: 恢复同步数据
+    // Step 6: 恢复同步数据
     if (syncData && typeof syncData === 'object') {
       for (const [key, data] of Object.entries(syncData)) {
         await redisClient.set(key, JSON.stringify(data));
       }
     }
 
-    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份，覆盖所有数据：${users?.length || 0} 个用户`, currentUser.userId, currentUser.username, ip, true);
+    const userCount = Object.keys(restoredUsers).length;
+    await logAdmin('import', `管理员 ${currentUser.username} 恢复备份，共 ${userCount} 个用户（含当前管理员）`, currentUser.userId, currentUser.username, ip, true);
 
     res.json({
       success: true,
