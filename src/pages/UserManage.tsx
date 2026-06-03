@@ -17,9 +17,11 @@ export default function UserManage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  const adminCount = users.filter((u) => u.role === 'admin').length;
+  const adminCount = users.filter((u) => u.role === 'admin' || u.role === 'owner').length;
+  const ownerCount = users.filter((u) => u.role === 'owner').length;
 
-  const isLastAdmin = (user: User) => user.role === 'admin' && adminCount <= 1;
+  const isLastAdmin = (user: User) => (user.role === 'admin' || user.role === 'owner') && adminCount <= 1;
+  const isOwner = (user: User) => user.role === 'owner';
 
   const handleCreate = () => {
     setEditingUser(null);
@@ -37,6 +39,10 @@ export default function UserManage() {
 
   const handleToggleStatus = async (userId: string) => {
     const user = users.find((u) => u.userId === userId);
+    if (user?.role === 'owner') {
+      alert('不能禁用站长账户');
+      return;
+    }
     if (user?.role === 'admin' && adminCount <= 1) {
       alert('不能禁用唯一的管理员账户');
       return;
@@ -70,6 +76,10 @@ export default function UserManage() {
 
   const handleDeleteUser = async (userId: string) => {
     const user = users.find((u) => u.userId === userId);
+    if (user?.role === 'owner') {
+      alert('不能删除站长账户');
+      return;
+    }
     if (user?.role === 'admin' && adminCount <= 1) {
       alert('不能删除唯一的管理员账户');
       return;
@@ -147,11 +157,11 @@ export default function UserManage() {
                   <span
                     className="text-xs px-2 py-1 rounded-full"
                     style={{
-                      backgroundColor: user.role === 'admin' ? 'rgba(124, 58, 237, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                      color: user.role === 'admin' ? 'var(--accent-purple-light)' : 'var(--accent-green)',
+                      backgroundColor: user.role === 'owner' ? 'rgba(245, 158, 11, 0.2)' : user.role === 'admin' ? 'rgba(124, 58, 237, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                      color: user.role === 'owner' ? 'var(--accent-orange)' : user.role === 'admin' ? 'var(--accent-purple-light)' : 'var(--accent-green)',
                     }}
                   >
-                    {user.role === 'admin' ? '管理员' : '普通用户'}
+                    {user.role === 'owner' ? '站长' : user.role === 'admin' ? '管理员' : '普通用户'}
                   </span>
                 </td>
                 <td className="px-6 py-4">
@@ -170,7 +180,7 @@ export default function UserManage() {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center justify-end gap-2">
-                    {!isLastAdmin(user) && (
+                    {!isOwner(user) && !isLastAdmin(user) && (
                       <button
                         onClick={() => handleToggleStatus(user.userId)}
                         className="p-2 rounded-lg transition-all duration-150"
@@ -227,7 +237,7 @@ export default function UserManage() {
                     >
                       <Database className="w-4 h-4" />
                     </button>
-                    {!isLastAdmin(user) && (
+                    {!isOwner(user) && !isLastAdmin(user) && (
                       <button
                         onClick={() => handleDeleteUser(user.userId)}
                         className="p-2 rounded-lg transition-all duration-150"

@@ -262,35 +262,35 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     }
 
-    // 检查是否有用户数据，如果没有则创建初始站长
+    // 检查是否有站长账号，如果没有则创建初始站长
     let usersData = await redisClient.hGetAll('boxsync:users');
 
-    // 检查是否已存在 admin 用户
-    const hasAdmin = Object.values(usersData).some(userStr => {
+    // 检查是否已存在站长（owner）
+    const hasOwner = Object.values(usersData).some(userStr => {
       try {
         const user = JSON.parse(userStr);
-        return user.username === 'admin';
+        return user.role === 'owner';
       } catch {
         return false;
       }
     });
 
-    // 如果没有 admin 用户，创建初始站长账号（固定密码 admin123）
+    // 如果没有站长账号，创建初始站长账号（固定密码 admin123）
     let initialPassword: string | undefined;
-    if (!hasAdmin) {
+    if (!hasOwner) {
       initialPassword = 'admin123';
       const hashedPassword = await bcrypt.hash(initialPassword, 10);
-      const adminUser = {
-        userId: 'admin',
+      const ownerUser = {
+        userId: 'owner',
         username: 'admin',
         password: hashedPassword,
-        role: 'admin',
+        role: 'owner',
         status: 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await redisClient.hSet('boxsync:users', 'admin', JSON.stringify(adminUser));
-      console.log('[Import] Created initial admin account');
+      await redisClient.hSet('boxsync:users', 'owner', JSON.stringify(ownerUser));
+      console.log('[Import] Created initial owner account');
 
       // 重新读取用户数据
       usersData = await redisClient.hGetAll('boxsync:users');
@@ -381,35 +381,35 @@ router.post('/import-public', async (req, res, next) => {
       }
     }
 
-    // 检查是否有用户数据，如果没有 admin 用户则创建初始站长
+    // 检查是否有站长账号，如果没有则创建初始站长
     let usersData = await redisClient.hGetAll('boxsync:users');
 
-    // 检查是否已存在 admin 用户
-    const hasAdmin = Object.values(usersData).some(userStr => {
+    // 检查是否已存在站长（owner）
+    const hasOwner = Object.values(usersData).some(userStr => {
       try {
         const user = JSON.parse(userStr as string);
-        return user.username === 'admin';
+        return user.role === 'owner';
       } catch {
         return false;
       }
     });
 
-    // 如果没有 admin 用户，创建初始站长账号（固定密码 admin123）
+    // 如果没有站长账号，创建初始站长账号（固定密码 admin123）
     let initialPassword: string | undefined;
-    if (!hasAdmin) {
+    if (!hasOwner) {
       initialPassword = 'admin123';
       const hashedPassword = await bcrypt.hash(initialPassword, 10);
-      const adminUser = {
-        userId: 'admin',
+      const ownerUser = {
+        userId: 'owner',
         username: 'admin',
         password: hashedPassword,
-        role: 'admin',
+        role: 'owner',
         status: 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await redisClient.hSet('boxsync:users', 'admin', JSON.stringify(adminUser));
-      console.log('[Import] Created initial admin account');
+      await redisClient.hSet('boxsync:users', 'owner', JSON.stringify(ownerUser));
+      console.log('[Import] Created initial owner account');
 
       // 重新读取用户数据
       usersData = await redisClient.hGetAll('boxsync:users');
@@ -451,46 +451,62 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
     // 1. Reset settings to default
     await redisClient.set(SETTINGS_KEY, JSON.stringify(defaultSettings));
 
-    // 2. Clear all users
+    // 2. 保存当前站长账号信息
+    const usersData = await redisClient.hGetAll('boxsync:users');
+    let ownerUser: { userId: string; username: string; password: string; role: string; status: string; createdAt: string; updatedAt: string } | null = null;
+    
+    for (const [field, value] of Object.entries(usersData)) {
+      try {
+        const userObj = JSON.parse(value);
+        if (userObj.role === 'owner') {
+          ownerUser = userObj;
+          break;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 3. Clear all users
     await redisClient.del('boxsync:users');
 
-    // 3. Clear all logs
+    // 4. Clear all logs
     await redisClient.del('boxsync:logs');
 
-    // 4. Clear all user data (sync data)
+    // 5. Clear all user data (sync data)
     const dataKeys = await redisClient.keys('boxsync:data:*');
     for (const key of dataKeys) {
       await redisClient.del(key);
     }
 
-    // 5. Clear all partitions
+    // 6. Clear all partitions
     await redisClient.del('boxsync:partitions');
 
-    // 6. Clear all sessions
+    // 7. Clear all sessions
     const sessionKeys = await redisClient.keys('boxsync:session:*');
     for (const key of sessionKeys) {
       await redisClient.del(key);
     }
 
-    // 7. 重新创建站长账号（固定密码 admin123）
+    // 8. 恢复站长账号（如果有则保留用户名，密码恢复为 admin123）
     const hashedPassword = await bcrypt.hash('admin123', 10);
-    const adminUser = {
-      userId: 'admin',
-      username: 'admin',
+    const ownerAccount = {
+      userId: ownerUser?.userId || 'owner',
+      username: ownerUser?.username || 'admin',
       password: hashedPassword,
-      role: 'admin',
+      role: 'owner',
       status: 'active',
-      createdAt: new Date().toISOString(),
+      createdAt: ownerUser?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await redisClient.hSet('boxsync:users', 'admin', JSON.stringify(adminUser));
+    await redisClient.hSet('boxsync:users', ownerAccount.userId, JSON.stringify(ownerAccount));
 
     // Log the action
-    await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据并恢复初始站长账号`, user.userId, user.username, ip, true);
+    await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据并恢复站长账号`, user.userId, user.username, ip, true);
 
     res.json({
       success: true,
-      message: 'All data cleared successfully. Server has been reset to default state. Please login with initial admin account.',
+      message: 'All data cleared successfully. Server has been reset to default state. Please login with owner account.',
     });
   } catch (error) {
     await logAdmin('clear_all', `管理员 ${user.username} 清空数据失败`, user.userId, user.username, ip, false, (error as Error).message);
