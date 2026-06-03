@@ -64,7 +64,27 @@ npm run dev
 项目已包含 `docker-compose.yml`，直接启动即可：
 
 ```bash
+# 启动服务
 docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+**开机自启动配置：**
+
+Docker Compose 已配置 `restart: unless-stopped`，容器会在 Docker 守护进程启动时自动启动。如需确保系统重启后自动运行：
+
+```bash
+# 启用 Docker 服务开机自启（大多数系统默认已启用）
+sudo systemctl enable docker
+
+# 验证容器自动重启策略
+docker inspect boxsync-server | grep -A 5 RestartPolicy
+docker inspect boxsync-redis | grep -A 5 RestartPolicy
 ```
 
 或手动配置：
@@ -79,7 +99,7 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -157,6 +177,16 @@ volumes:
   redis-data:
 ```
 
+**启动命令：**
+
+```bash
+# 创建 docker-compose.yml 文件后启动
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f boxsync
+```
+
 #### 方式三：Host 网络模式
 
 适用于 NAS 等需要直接使用宿主机网络的场景：
@@ -187,11 +217,71 @@ services:
     restart: unless-stopped
 ```
 
+**NAS 用户特别提示：**
+
+由于 Host 模式下容器与宿主机共享网络，部分 NAS 的 Docker 套件可能不支持。建议 NAS 用户使用 Bridge 模式（方式一或方式二）。
+
+```bash
+# NAS 上启动（使用方式一的配置）
+docker-compose up -d
+
+# 查看容器状态
+docker-compose ps
+```
+
 > **Host 模式注意事项：**
 > - `ports` 映射在 host 模式下不生效
 > - 服务直接使用宿主机的 9390 端口
 > - Redis 连接地址需改为 `redis://localhost:6379`
 > - 部分 NAS 的 Docker 套件可能不支持 host 模式，请使用 Bridge 模式
+
+### 系统服务配置（Linux 非 Docker 部署）
+
+如果使用 Node.js 直接部署而非 Docker，可配置 systemd 服务实现开机自启：
+
+**1. 创建服务文件：**
+
+```bash
+sudo tee /etc/systemd/system/boxsync.service << 'EOF'
+[Unit]
+Description=BoxSync Server
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=boxsync
+WorkingDirectory=/opt/boxsync
+ExecStart=/usr/bin/node dist/server/index.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=REDIS_URL=redis://localhost:6379
+Environment=SERVER_PORT=9390
+Environment=JWT_SECRET=your-secret-key-here
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+**2. 启用并启动服务：**
+
+```bash
+# 重载 systemd
+sudo systemctl daemon-reload
+
+# 启用开机自启
+sudo systemctl enable boxsync
+
+# 启动服务
+sudo systemctl start boxsync
+
+# 查看状态
+sudo systemctl status boxsync
+
+# 查看日志
+sudo journalctl -u boxsync -f
+```
 
 ## 配置说明
 

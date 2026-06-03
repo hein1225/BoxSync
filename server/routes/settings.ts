@@ -101,10 +101,11 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
     const allKeys = await redisClient.keys('boxsync:*');
     console.log(`[Export] Found ${allKeys.length} keys`);
     
-    const stringKeys = allKeys.filter(k => 
-      !k.includes(':users') && 
-      !k.includes(':partitions') && 
-      !k.includes(':logs')
+    const stringKeys = allKeys.filter(k =>
+      !k.includes(':users') &&
+      !k.includes(':partitions') &&
+      !k.includes(':logs') &&
+      !k.includes(':admin')
     );
     console.log(`[Export] Processing ${stringKeys.length} string keys`);
     
@@ -147,7 +148,22 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
       console.error('[Export] Error reading users:', err);
     }
 
-    // 3. Hash 类型数据 - partitions
+    // 3. Hash 类型数据 - admin (站长账号)
+    console.log('[Export] Fetching admin...');
+    try {
+      const adminData = await redisClient.hGetAll('boxsync:admin');
+      console.log(`[Export] Found admin: ${adminData.username || 'none'}`);
+      if (Object.keys(adminData).length > 0) {
+        exportData['boxsync:admin'] = {};
+        for (const [field, value] of Object.entries(adminData)) {
+          (exportData['boxsync:admin'] as Record<string, string>)[field] = value;
+        }
+      }
+    } catch (err) {
+      console.error('[Export] Error reading admin:', err);
+    }
+
+    // 4. Hash 类型数据 - partitions
     console.log('[Export] Fetching partitions...');
     try {
       const partitionsData = await redisClient.hGetAll('boxsync:partitions');
@@ -231,7 +247,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       // 跳过元数据字段
       if (key === 'version' || key === 'exportTime') continue;
 
-      if (key === 'boxsync:users' || key === 'boxsync:partitions') {
+      if (key === 'boxsync:admin' || key === 'boxsync:users' || key === 'boxsync:partitions') {
         // Hash 类型数据
         if (value && typeof value === 'object') {
           const entries = Object.entries(value as Record<string, unknown>);
@@ -240,8 +256,10 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
             if (key === 'boxsync:users') {
               const userObj = fieldValue as Record<string, unknown>;
               console.log(`[Import] Restoring user: ${userObj.username} (${field}), role: ${userObj.role}`);
+            } else if (key === 'boxsync:admin') {
+              console.log(`[Import] Restoring admin field: ${field}`);
             }
-            await redisClient.hSet(key, field, JSON.stringify(fieldValue));
+            await redisClient.hSet(key, field, typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
           }
           hashCount++;
         }
@@ -356,11 +374,11 @@ router.post('/import-public', async (req, res, next) => {
       // 跳过元数据字段
       if (key === 'version' || key === 'exportTime') continue;
 
-      if (key === 'boxsync:users' || key === 'boxsync:partitions') {
+      if (key === 'boxsync:admin' || key === 'boxsync:users' || key === 'boxsync:partitions') {
         // Hash 类型数据
         if (value && typeof value === 'object') {
           for (const [field, fieldValue] of Object.entries(value as Record<string, unknown>)) {
-            await redisClient.hSet(key, field, JSON.stringify(fieldValue));
+            await redisClient.hSet(key, field, typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
           }
           hashCount++;
         }

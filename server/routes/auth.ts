@@ -13,8 +13,12 @@ const SESSION_PREFIX = 'boxsync:session:';
 export async function initAdmin() {
   try {
     const redisClient = getRedisClient();
+    console.log('[InitAdmin] Checking if admin exists...');
     const exists = await redisClient.exists(ADMIN_KEY);
+    console.log(`[InitAdmin] Admin exists: ${exists}`);
+
     if (!exists) {
+      console.log('[InitAdmin] Creating default owner account...');
       const username = process.env.ADMIN_USERNAME || 'admin';
       const password = process.env.ADMIN_PASSWORD || 'admin123';
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -28,18 +32,19 @@ export async function initAdmin() {
         status: 'active',
         isDefault: 'true',
       });
-      console.log(`Default owner created: ${username}`);
+      console.log(`[InitAdmin] Default owner created: ${username}`);
     } else {
       // 确保已存在的 admin 角色为 owner
       const adminData = await redisClient.hGetAll(ADMIN_KEY);
+      console.log(`[InitAdmin] Existing admin found: ${adminData.username}, role: ${adminData.role}`);
       if (adminData.role !== 'owner') {
         await redisClient.hSet(ADMIN_KEY, 'role', 'owner');
         await redisClient.hSet(ADMIN_KEY, 'updatedAt', Date.now().toString());
-        console.log(`Updated admin role to owner: ${adminData.username}`);
+        console.log(`[InitAdmin] Updated admin role to owner: ${adminData.username}`);
       }
     }
   } catch (error) {
-    console.error('Failed to init admin:', error);
+    console.error('[InitAdmin] Failed to init admin:', error);
   }
 }
 

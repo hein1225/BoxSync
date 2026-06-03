@@ -32,7 +32,11 @@ function sanitizeUser(user: Record<string, unknown>): UserResponse {
 router.get('/', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const redisClient = getRedisClient();
+    console.log('[GetUsers] Fetching users from Redis...');
+
     const usersData = await redisClient.hGetAll('boxsync:users');
+    console.log(`[GetUsers] Found ${Object.keys(usersData).length} regular users`);
+
     const users = Object.values(usersData).map((u) => {
       const user = JSON.parse(u);
       return sanitizeUser(user);
@@ -40,6 +44,8 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res, next) => {
 
     // Add admin/owner user
     const adminData = await redisClient.hGetAll('boxsync:admin');
+    console.log(`[GetUsers] Admin data:`, adminData);
+
     const admin: UserResponse = {
       userId: adminData.userId || 'admin',
       username: adminData.username || 'admin',
@@ -49,11 +55,13 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res, next) => {
       status: adminData.status || 'active',
     };
 
+    console.log(`[GetUsers] Returning ${users.length + 1} users total`);
     res.json({
       success: true,
       users: [admin, ...users],
     });
   } catch (error) {
+    console.error('[GetUsers] Error:', error);
     next(error);
   }
 });
