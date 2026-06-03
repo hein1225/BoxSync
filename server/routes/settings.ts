@@ -262,9 +262,8 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     }
 
-    // 检查是否有用户数据，如果没有则创建初始管理员
+    // 检查是否有用户数据，如果没有则创建初始站长
     let usersData = await redisClient.hGetAll('boxsync:users');
-    let initialPassword: string | undefined;
 
     // 检查是否已存在 admin 用户
     const hasAdmin = Object.values(usersData).some(userStr => {
@@ -276,13 +275,13 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     });
 
-    // 如果没有 admin 用户，创建初始管理员
+    // 如果没有 admin 用户，创建初始站长账号（固定密码 admin123）
+    let initialPassword: string | undefined;
     if (!hasAdmin) {
-      const adminId = Math.random().toString(36).slice(2, 11);
-      initialPassword = process.env.ADMIN_INITIAL_PASSWORD || Math.random().toString(36).slice(2, 15);
+      initialPassword = 'admin123';
       const hashedPassword = await bcrypt.hash(initialPassword, 10);
       const adminUser = {
-        userId: adminId,
+        userId: 'admin',
         username: 'admin',
         password: hashedPassword,
         role: 'admin',
@@ -290,7 +289,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await redisClient.hSet('boxsync:users', adminId, JSON.stringify(adminUser));
+      await redisClient.hSet('boxsync:users', 'admin', JSON.stringify(adminUser));
       console.log('[Import] Created initial admin account');
 
       // 重新读取用户数据
@@ -305,7 +304,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
     res.json({
       success: true,
       message: initialPassword
-        ? '备份恢复完成。已自动创建初始管理员账号，请查看响应中的密码'
+        ? '备份恢复完成。已创建初始站长账号，请查看响应中的密码'
         : 'Backup restored successfully. All existing data has been replaced. Please login again.',
       stats: {
         users: userCount,
@@ -382,9 +381,8 @@ router.post('/import-public', async (req, res, next) => {
       }
     }
 
-    // 检查是否有用户数据，如果没有 admin 用户则创建
+    // 检查是否有用户数据，如果没有 admin 用户则创建初始站长
     let usersData = await redisClient.hGetAll('boxsync:users');
-    let initialPassword: string | undefined;
 
     // 检查是否已存在 admin 用户
     const hasAdmin = Object.values(usersData).some(userStr => {
@@ -396,13 +394,13 @@ router.post('/import-public', async (req, res, next) => {
       }
     });
 
-    // 如果没有 admin 用户，创建初始管理员
+    // 如果没有 admin 用户，创建初始站长账号（固定密码 admin123）
+    let initialPassword: string | undefined;
     if (!hasAdmin) {
-      const adminId = Math.random().toString(36).slice(2, 11);
-      initialPassword = process.env.ADMIN_INITIAL_PASSWORD || Math.random().toString(36).slice(2, 15);
+      initialPassword = 'admin123';
       const hashedPassword = await bcrypt.hash(initialPassword, 10);
       const adminUser = {
-        userId: adminId,
+        userId: 'admin',
         username: 'admin',
         password: hashedPassword,
         role: 'admin',
@@ -410,7 +408,7 @@ router.post('/import-public', async (req, res, next) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      await redisClient.hSet('boxsync:users', adminId, JSON.stringify(adminUser));
+      await redisClient.hSet('boxsync:users', 'admin', JSON.stringify(adminUser));
       console.log('[Import] Created initial admin account');
 
       // 重新读取用户数据
@@ -425,7 +423,7 @@ router.post('/import-public', async (req, res, next) => {
     res.json({
       success: true,
       message: initialPassword
-        ? '备份恢复完成。已自动创建初始管理员账号，请查看响应中的密码'
+        ? '备份恢复完成。已创建初始站长账号，请查看响应中的密码'
         : 'Backup restored successfully. All existing data has been replaced. Please login again.',
       stats: {
         users: userCount,
@@ -474,12 +472,10 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
       await redisClient.del(key);
     }
 
-    // 7. 重新创建初始管理员账号（密码从环境变量读取，默认为随机密码）
-    const adminId = Math.random().toString(36).slice(2, 11);
-    const defaultPassword = process.env.ADMIN_INITIAL_PASSWORD || Math.random().toString(36).slice(2, 15);
-    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+    // 7. 重新创建站长账号（固定密码 admin123）
+    const hashedPassword = await bcrypt.hash('admin123', 10);
     const adminUser = {
-      userId: adminId,
+      userId: 'admin',
       username: 'admin',
       password: hashedPassword,
       role: 'admin',
@@ -487,15 +483,14 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await redisClient.hSet('boxsync:users', adminId, JSON.stringify(adminUser));
+    await redisClient.hSet('boxsync:users', 'admin', JSON.stringify(adminUser));
 
     // Log the action
-    await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据并恢复初始管理员账号`, user.userId, user.username, ip, true);
+    await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据并恢复初始站长账号`, user.userId, user.username, ip, true);
 
     res.json({
       success: true,
-      message: `All data cleared successfully. Server has been reset to default state with initial admin account. Username: admin, Password: ${defaultPassword}`,
-      initialPassword: defaultPassword,
+      message: 'All data cleared successfully. Server has been reset to default state. Please login with initial admin account.',
     });
   } catch (error) {
     await logAdmin('clear_all', `管理员 ${user.username} 清空数据失败`, user.userId, user.username, ip, false, (error as Error).message);

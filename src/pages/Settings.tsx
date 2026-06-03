@@ -84,7 +84,7 @@ export default function Settings() {
         localStorage.removeItem('boxsync_session_time');
         setShowClearAllConfirm(false);
         alert('所有数据已清空！服务器已恢复默认状态，请重新登录。');
-        window.location.href = '/login';
+        window.location.href = '/admin';
       } else {
         const data = await response.json();
         alert(data.message || '清空数据失败');

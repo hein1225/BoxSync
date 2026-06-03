@@ -86,7 +86,7 @@ export default function ImportRestore() {
     // 清除所有本地存储
     localStorage.clear();
     // 跳转到登录页面
-    window.location.href = '/login';
+    window.location.href = '/admin';
   };
 
   const getUserCount = () => {
@@ -336,7 +336,7 @@ export default function ImportRestore() {
                   重要提示
                 </p>
                 <p className="mb-2" style={{ color: 'var(--text-secondary)' }}>
-                  由于备份中没有用户数据，系统已自动创建初始管理员账号：
+                  由于备份中没有站长账号，系统已自动创建初始站长账号：
                 </p>
                 <div className="rounded-lg p-3 mb-3" style={{ backgroundColor: 'var(--bg-primary)' }}>
                   <p className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
@@ -345,7 +345,7 @@ export default function ImportRestore() {
                   </p>
                 </div>
                 <p className="text-xs" style={{ color: 'var(--accent-red)' }}>
-                  安全建议：登录后请立即进入「用户管理」删除或修改初始管理员账号的密码！
+                  安全建议：登录后请立即进入「用户管理」修改站长账号的密码！
                 </p>
               </div>
             )}
@@ -355,7 +355,7 @@ export default function ImportRestore() {
               style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}
             >
               <p style={{ color: 'var(--text-primary)' }}>
-                点击下面的按钮完成重启并返回登录页面。
+                {initialPassword ? '请使用上述账号密码登录。' : '数据恢复完成。请使用站长账号登录。'}
               </p>
             </div>
 
