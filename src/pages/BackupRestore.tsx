@@ -27,6 +27,10 @@ export default function BackupRestore() {
       setExportError('');
       const token = localStorage.getItem('boxsync_token');
 
+      if (!token) {
+        throw new Error('未登录或登录已过期，请重新登录');
+      }
+
       // 从后端 API 获取完整的备份数据（包含密码等敏感信息）
       const response = await fetch('/api/settings/export', {
         headers: {
@@ -35,7 +39,8 @@ export default function BackupRestore() {
       });
 
       if (!response.ok) {
-        throw new Error('导出失败');
+        const errorData = await response.json().catch(() => ({ message: '导出失败' }));
+        throw new Error(errorData.message || `导出失败 (${response.status})`);
       }
 
       const result = await response.json();
@@ -61,6 +66,7 @@ export default function BackupRestore() {
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 3000);
     } catch (error) {
+      console.error('Export error:', error);
       setExportError(error instanceof Error ? error.message : '导出失败');
     }
   };
