@@ -83,44 +83,73 @@ router.post('/reset', authMiddleware, adminMiddleware, async (req, res, next) =>
   }
 });
 
-// Export settings (admin only)
+// Export all Redis data (admin only) - 导出所有 Redis 数据
 router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const redisClient = getRedisClient();
 
-    // 1. Export settings
-    const settingsData = await redisClient.get(SETTINGS_KEY);
-    const settings = settingsData ? JSON.parse(settingsData) : {};
+    // 导出所有 Redis 数据，按 key 类型分类
+    const exportData: Record<string, unknown> = {
+      version: '2.0',
+      exportTime: new Date().toISOString(),
+    };
 
-    // 2. Export users (with password)
-    const usersData = await redisClient.hGetAll('boxsync:users');
-    const users = Object.values(usersData).map((u) => JSON.parse(u));
-
-    // 3. Export user partitions
-    const partitionsData = await redisClient.hGetAll('boxsync:partitions');
-    const partitions: Record<string, unknown[]> = {};
-    for (const [userId, data] of Object.entries(partitionsData)) {
-      partitions[userId] = JSON.parse(data);
-    }
-
-    // 4. Export sync data
-    const syncData: Record<string, unknown> = {};
-    const dataKeys = await redisClient.keys('boxsync:data:*');
-    for (const key of dataKeys) {
-      const data = await redisClient.get(key);
-      if (data) {
-        syncData[key] = JSON.parse(data);
+    // 1. String 类型数据
+    const allKeys = await redisClient.keys('boxsync:*');
+    const stringKeys = allKeys.filter(k => 
+      !k.includes(':users') && 
+      !k.includes(':partitions') && 
+      !k.includes(':logs')
+    );
+    
+    for (const key of stringKeys) {
+      const value = await redisClient.get(key);
+      if (value) {
+        try {
+          exportData[key] = JSON.parse(value);
+        } catch {
+          exportData[key] = value; // 非 JSON 字符串直接存储
+        }
       }
     }
 
-    const exportData = {
-      version: '1.1',
-      exportTime: new Date().toISOString(),
-      settings: { ...defaultSettings, ...settings },
-      users,
-      partitions,
-      syncData,
-    };
+    // 2. Hash 类型数据 - users
+    const usersData = await redisClient.hGetAll('boxsync:users');
+    if (Object.keys(usersData).length > 0) {
+      exportData['boxsync:users'] = {};
+      for (const [field, value] of Object.entries(usersData)) {
+        try {
+          (exportData['boxsync:users'] as Record<string, unknown>)[field] = JSON.parse(value);
+        } catch {
+          (exportData['boxsync:users'] as Record<string, unknown>)[field] = value;
+        }
+      }
+    }
+
+    // 3. Hash 类型数据 - partitions
+    const partitionsData = await redisClient.hGetAll('boxsync:partitions');
+    if (Object.keys(partitionsData).length > 0) {
+      exportData['boxsync:partitions'] = {};
+      for (const [field, value] of Object.entries(partitionsData)) {
+        try {
+          (exportData['boxsync:partitions'] as Record<string, unknown>)[field] = JSON.parse(value);
+        } catch {
+          (exportData['boxsync:partitions'] as Record<string, unknown>)[field] = value;
+        }
+      }
+    }
+
+    // 4. List 类型数据 - logs
+    const logsData = await redisClient.lRange('boxsync:logs', 0, -1);
+    if (logsData.length > 0) {
+      exportData['boxsync:logs'] = logsData.map(log => {
+        try {
+          return JSON.parse(log);
+        } catch {
+          return log;
+        }
+      });
+    }
 
     res.json({
       success: true,
@@ -131,113 +160,179 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
   }
 });
 
-// Import settings (admin only) - 完全覆盖模式（清除所有数据包括当前管理员）
+// Import all Redis data (admin only) - 完全覆盖模式，导入所有 Redis 数据
 router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest, res, next) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const currentUser = req.user!;
 
   try {
     const redisClient = getRedisClient();
-    const { settings, users, partitions, syncData } = req.body;
+    const backupData = req.body;
 
-    // Step 1: 清除所有现有数据（完全覆盖模式）- 使用 Promise.allSettled 确保即使部分删除失败也能继续
-    const deleteOperations: Promise<unknown>[] = [];
-
-    // 1.1 清除所有用户数据
-    deleteOperations.push(redisClient.del('boxsync:users').catch(err => {
-      console.warn('[Import] Failed to delete users:', err);
-      return null;
-    }));
-
-    // 1.2 清除所有分区数据
-    deleteOperations.push(redisClient.del('boxsync:partitions').catch(err => {
-      console.warn('[Import] Failed to delete partitions:', err);
-      return null;
-    }));
-
-    // 1.3 清除所有同步数据
-    const existingDataKeys = await redisClient.keys('boxsync:data:*');
-    for (const key of existingDataKeys) {
-      deleteOperations.push(redisClient.del(key).catch(err => {
-        console.warn(`[Import] Failed to delete sync data ${key}:`, err);
-        return null;
-      }));
+    // 验证备份数据格式
+    if (!backupData || typeof backupData !== 'object') {
+      throw createError('无效的备份数据格式', 400, 'INVALID_BACKUP_FORMAT');
     }
 
-    // 1.4 清除所有会话（包括当前管理员的会话，强制重新登录）
-    const sessionKeys = await redisClient.keys('boxsync:session:*');
-    for (const key of sessionKeys) {
+    // Step 1: 清除所有现有数据（完全覆盖模式）
+    const allKeys = await redisClient.keys('boxsync:*');
+    const deleteOperations: Promise<unknown>[] = [];
+
+    for (const key of allKeys) {
       deleteOperations.push(redisClient.del(key).catch(err => {
-        console.warn(`[Import] Failed to delete session ${key}:`, err);
+        console.warn(`[Import] Failed to delete ${key}:`, err);
         return null;
       }));
     }
 
     await Promise.allSettled(deleteOperations);
 
-    // Step 2: 恢复设置
-    if (settings) {
-      await redisClient.set(SETTINGS_KEY, JSON.stringify(settings));
-    }
+    // Step 2: 恢复所有数据
+    let stringCount = 0;
+    let hashCount = 0;
+    let listCount = 0;
 
-    // Step 3: 恢复用户（包含密码）- 使用 Map 去重，以 userId 为准
-    const restoredUsers: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(backupData)) {
+      // 跳过元数据字段
+      if (key === 'version' || key === 'exportTime') continue;
 
-    // 添加备份中的用户
-    if (users && Array.isArray(users) && users.length > 0) {
-      for (const user of users) {
-        if (user.userId && user.username) {
-          restoredUsers[user.userId] = user;
+      if (key === 'boxsync:users' || key === 'boxsync:partitions') {
+        // Hash 类型数据
+        if (value && typeof value === 'object') {
+          for (const [field, fieldValue] of Object.entries(value as Record<string, unknown>)) {
+            await redisClient.hSet(key, field, JSON.stringify(fieldValue));
+          }
+          hashCount++;
         }
+      } else if (key === 'boxsync:logs') {
+        // List 类型数据 - 日志项在导出时已经解析为对象，需要重新序列化
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            // 如果 item 是对象，序列化为字符串；如果已经是字符串，直接使用
+            const itemStr = typeof item === 'object' ? JSON.stringify(item) : String(item);
+            await redisClient.lPush(key, itemStr);
+          }
+          listCount++;
+        }
+      } else {
+        // String 类型数据
+        await redisClient.set(key, JSON.stringify(value));
+        stringCount++;
       }
     }
 
-    // 检查是否有用户数据，如果没有则拒绝导入
-    if (Object.keys(restoredUsers).length === 0) {
+    // 检查是否有用户数据
+    const usersData = await redisClient.hGetAll('boxsync:users');
+    if (Object.keys(usersData).length === 0) {
       throw createError('备份文件中没有有效的用户数据，导入已取消', 400, 'NO_USERS_IN_BACKUP');
     }
 
-    // 写入用户数据
-    for (const user of Object.values(restoredUsers)) {
-      const u = user as { userId: string };
-      await redisClient.hSet('boxsync:users', u.userId, JSON.stringify(user));
-    }
-
-    // Step 4: 恢复分区数据
-    if (partitions && typeof partitions === 'object') {
-      for (const [userId, data] of Object.entries(partitions)) {
-        if (Array.isArray(data)) {
-          await redisClient.hSet('boxsync:partitions', userId, JSON.stringify(data));
-        }
-      }
-    }
-
-    // Step 5: 恢复同步数据
-    if (syncData && typeof syncData === 'object') {
-      for (const [key, data] of Object.entries(syncData)) {
-        await redisClient.set(key, JSON.stringify(data));
-      }
-    }
-
-    const userCount = Object.keys(restoredUsers).length;
-    const partitionCount = partitions ? Object.keys(partitions).length : 0;
-    const syncDataCount = syncData ? Object.keys(syncData).length : 0;
+    const userCount = Object.keys(usersData).length;
 
     // 记录恢复操作到日志（系统级别，因为当前管理员会话已被清除）
-    await logAdmin('import', `备份恢复完成：${userCount} 个用户, ${partitionCount} 个分区, ${syncDataCount} 条同步数据`, 'system', 'system', ip, true);
+    await logAdmin('import', `备份恢复完成：${userCount} 个用户, ${stringCount} 个字符串键, ${hashCount} 个哈希表, ${listCount} 个列表`, 'system', 'system', ip, true);
 
     res.json({
       success: true,
       message: 'Backup restored successfully. All existing data has been replaced. Please login again.',
       stats: {
         users: userCount,
-        partitions: partitionCount,
-        syncData: syncDataCount,
+        stringKeys: stringCount,
+        hashKeys: hashCount,
+        listKeys: listCount,
       },
       requireRelogin: true,
     });
   } catch (error) {
     await logAdmin('import', `管理员 ${currentUser.username} 恢复备份失败`, currentUser.userId, currentUser.username, ip, false, (error as Error).message);
+    next(error);
+  }
+});
+
+// Public import endpoint - 无需认证的导入端点（用于导入页面）
+router.post('/import-public', async (req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+
+  try {
+    const redisClient = getRedisClient();
+    const backupData = req.body;
+
+    // 验证备份数据格式
+    if (!backupData || typeof backupData !== 'object') {
+      throw createError('无效的备份数据格式', 400, 'INVALID_BACKUP_FORMAT');
+    }
+
+    // Step 1: 清除所有现有数据（完全覆盖模式）
+    const allKeys = await redisClient.keys('boxsync:*');
+    const deleteOperations: Promise<unknown>[] = [];
+
+    for (const key of allKeys) {
+      deleteOperations.push(redisClient.del(key).catch(err => {
+        console.warn(`[Import] Failed to delete ${key}:`, err);
+        return null;
+      }));
+    }
+
+    await Promise.allSettled(deleteOperations);
+
+    // Step 2: 恢复所有数据
+    let stringCount = 0;
+    let hashCount = 0;
+    let listCount = 0;
+
+    for (const [key, value] of Object.entries(backupData)) {
+      // 跳过元数据字段
+      if (key === 'version' || key === 'exportTime') continue;
+
+      if (key === 'boxsync:users' || key === 'boxsync:partitions') {
+        // Hash 类型数据
+        if (value && typeof value === 'object') {
+          for (const [field, fieldValue] of Object.entries(value as Record<string, unknown>)) {
+            await redisClient.hSet(key, field, JSON.stringify(fieldValue));
+          }
+          hashCount++;
+        }
+      } else if (key === 'boxsync:logs') {
+        // List 类型数据 - 日志项在导出时已经解析为对象，需要重新序列化
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            // 如果 item 是对象，序列化为字符串；如果已经是字符串，直接使用
+            const itemStr = typeof item === 'object' ? JSON.stringify(item) : String(item);
+            await redisClient.lPush(key, itemStr);
+          }
+          listCount++;
+        }
+      } else {
+        // String 类型数据
+        await redisClient.set(key, JSON.stringify(value));
+        stringCount++;
+      }
+    }
+
+    // 检查是否有用户数据
+    const usersData = await redisClient.hGetAll('boxsync:users');
+    if (Object.keys(usersData).length === 0) {
+      throw createError('备份文件中没有有效的用户数据，导入已取消', 400, 'NO_USERS_IN_BACKUP');
+    }
+
+    const userCount = Object.keys(usersData).length;
+
+    // 记录恢复操作到日志（系统级别）
+    await logAdmin('import', `备份恢复完成：${userCount} 个用户, ${stringCount} 个字符串键, ${hashCount} 个哈希表, ${listCount} 个列表`, 'system', 'system', ip, true);
+
+    res.json({
+      success: true,
+      message: 'Backup restored successfully. All existing data has been replaced. Please login again.',
+      stats: {
+        users: userCount,
+        stringKeys: stringCount,
+        hashKeys: hashCount,
+        listKeys: listCount,
+      },
+      requireRelogin: true,
+    });
+  } catch (error) {
+    await logAdmin('import', `恢复备份失败`, 'system', 'system', ip, false, (error as Error).message);
     next(error);
   }
 });

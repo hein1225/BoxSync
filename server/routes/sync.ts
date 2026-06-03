@@ -8,6 +8,33 @@ import type { AuthRequest } from '../middleware/auth.js';
 const router = Router();
 const DATA_PREFIX = 'boxsync:data:';
 const META_SUFFIX = ':_meta';
+const SETTINGS_KEY = 'boxsync:settings';
+
+// Helper function to get user data usage in bytes
+async function getUserDataUsage(userId: string): Promise<number> {
+  const redisClient = getRedisClient();
+  const pattern = `${DATA_PREFIX}${userId}:*`;
+  const keys = await redisClient.keys(pattern);
+  let totalBytes = 0;
+  for (const key of keys) {
+    const value = await redisClient.get(key);
+    if (value) {
+      totalBytes += Buffer.byteLength(value, 'utf8');
+    }
+  }
+  return totalBytes;
+}
+
+// Helper function to check if user exceeds data limit
+async function checkDataLimit(userId: string, newDataSize: number): Promise<{ allowed: boolean; limit: number; current: number }> {
+  const redisClient = getRedisClient();
+  const settingsData = await redisClient.get(SETTINGS_KEY);
+  const settings = settingsData ? JSON.parse(settingsData) : { maxDataPerUser: 100 };
+  const limitBytes = (settings.maxDataPerUser || 100) * 1024 * 1024; // Convert MB to bytes
+  const currentUsage = await getUserDataUsage(userId);
+  const allowed = currentUsage + newDataSize <= limitBytes;
+  return { allowed, limit: settings.maxDataPerUser || 100, current: Math.round(currentUsage / 1024 / 1024 * 100) / 100 };
+}
 
 // Write data
 router.post('/write', authMiddleware, async (req: AuthRequest, res, next) => {
@@ -33,7 +60,17 @@ router.post('/write', authMiddleware, async (req: AuthRequest, res, next) => {
       version: Date.now(),
     };
 
-    await redisClient.set(dataKey, JSON.stringify(data));
+    const dataString = JSON.stringify(data);
+    const dataSize = Buffer.byteLength(dataString, 'utf8');
+
+    // Check data limit
+    const limitCheck = await checkDataLimit(userId, dataSize);
+    if (!limitCheck.allowed) {
+      await logSync('write', `写入数据失败：用户 ${user.username} 超出数据上限`, userId, user.username, ip, false, appId, `数据上限 ${limitCheck.limit}MB，当前使用 ${limitCheck.current}MB`);
+      throw createError(`Data limit exceeded. Limit: ${limitCheck.limit}MB, Current: ${limitCheck.current}MB`, 413, 'DATA_LIMIT_EXCEEDED');
+    }
+
+    await redisClient.set(dataKey, dataString);
 
     // Update meta
     const metaData = await redisClient.get(metaKey);
@@ -109,20 +146,36 @@ router.post('/batch', authMiddleware, async (req: AuthRequest, res, next) => {
       throw createError('appId and changes array are required', 400, 'INVALID_INPUT');
     }
 
-    const results = [];
-    const metaKey = `${DATA_PREFIX}${userId}:${appId}${META_SUFFIX}`;
-
+    // Calculate total data size first
+    let totalNewSize = 0;
+    const dataItems = [];
     for (const change of changes) {
       const { key, value, timestamp } = change;
-      const dataKey = `${DATA_PREFIX}${userId}:${appId}:${key}`;
-
       const data = {
         value,
         timestamp: timestamp || Date.now(),
         version: Date.now(),
       };
+      const dataString = JSON.stringify(data);
+      totalNewSize += Buffer.byteLength(dataString, 'utf8');
+      dataItems.push({ key, dataString, data });
+    }
 
-      await redisClient.set(dataKey, JSON.stringify(data));
+    // Check data limit
+    const limitCheck = await checkDataLimit(userId, totalNewSize);
+    if (!limitCheck.allowed) {
+      await logSync('batch', `批量同步失败：用户 ${user.username} 超出数据上限`, userId, user.username, ip, false, appId, `数据上限 ${limitCheck.limit}MB，当前使用 ${limitCheck.current}MB`);
+      throw createError(`Data limit exceeded. Limit: ${limitCheck.limit}MB, Current: ${limitCheck.current}MB`, 413, 'DATA_LIMIT_EXCEEDED');
+    }
+
+    const results = [];
+    const metaKey = `${DATA_PREFIX}${userId}:${appId}${META_SUFFIX}`;
+
+    for (const item of dataItems) {
+      const { key, dataString, data } = item;
+      const dataKey = `${DATA_PREFIX}${userId}:${appId}:${key}`;
+
+      await redisClient.set(dataKey, dataString);
       results.push({ key, timestamp: data.timestamp, version: data.version });
     }
 

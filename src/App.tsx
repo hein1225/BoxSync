@@ -11,6 +11,7 @@ import Dashboard from "@/pages/Dashboard";
 import UserManage from "@/pages/UserManage";
 import StorageView from "@/pages/StorageView";
 import BackupRestore from "@/pages/BackupRestore";
+import ImportRestore from "@/pages/ImportRestore";
 import LogView from "@/pages/LogView";
 import About from "@/pages/About";
 import Settings from "@/pages/Settings";
@@ -51,6 +52,7 @@ export default function App() {
       <Routes>
         <Route path="/admin/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/import-restore" element={<ImportRestore />} />
         <Route
           path="/admin/*"
           element={

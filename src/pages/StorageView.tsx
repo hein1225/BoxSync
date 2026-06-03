@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Database, HardDrive, Clock, Server, Shield, Layers } from 'lucide-react';
-import { useUserPartitionsStore } from '@/stores/userPartitionsStore';
 import { useUserStore } from '@/stores/userStore';
+
+interface AppPartition {
+  appId: string;
+  appName: string;
+  keyCount: number;
+}
 
 interface StorageStats {
   username: string;
   keyCount: number;
   memoryUsage: number;
   lastSyncTime: number;
+  apps: AppPartition[];
 }
 
 function formatBytes(bytes: number): string {
@@ -19,16 +25,14 @@ function formatBytes(bytes: number): string {
 }
 
 export default function StorageView() {
-  const { partitions, fetchPartitions } = useUserPartitionsStore();
   const { users, fetchUsers } = useUserStore();
   const [storageStats, setStorageStats] = useState<StorageStats[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load users and partitions on mount
+  // Load users on mount
   useEffect(() => {
     fetchUsers();
-    fetchPartitions();
-  }, [fetchUsers, fetchPartitions]);
+  }, [fetchUsers]);
 
   // Fetch real storage data from API (admin only)
   useEffect(() => {
@@ -47,6 +51,7 @@ export default function StorageView() {
               keyCount: userStat.keyCount || 0,
               memoryUsage: userStat.memoryUsage || 0,
               lastSyncTime: userStat.lastSyncTime || 0,
+              apps: userStat.apps || [],
             }));
             setStorageStats(stats);
           }
@@ -68,7 +73,8 @@ export default function StorageView() {
 
   const totalKeys = storageStats.reduce((sum, s) => sum + s.keyCount, 0);
   const totalMemory = storageStats.reduce((sum, s) => sum + s.memoryUsage, 0);
-  const totalAppPartitions = partitions.reduce((sum, p) => sum + p.appPartitions.length, 0);
+  // 从 storageStats 计算应用分区总数（这是从 sync data meta 读取的真实数据）
+  const totalAppPartitions = storageStats.reduce((sum, s) => sum + (s.apps?.length || 0), 0);
 
   return (
     <div className="p-6 space-y-6 animate-fade-in">
@@ -220,11 +226,11 @@ export default function StorageView() {
                   </span>
                 </td>
                 <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {partitions.find((p) => p.userId === adminUser.userId)?.appPartitions.length || 0}
+                  {storageStats.find((s) => s.username === adminUser.username)?.apps?.length || 0}
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex flex-wrap gap-2">
-                    {partitions.find((p) => p.userId === adminUser.userId)?.appPartitions.map((app) => (
+                    {storageStats.find((s) => s.username === adminUser.username)?.apps?.map((app) => (
                       <span
                         key={app.appId}
                         className="text-xs px-2 py-1 rounded-full"
@@ -233,7 +239,7 @@ export default function StorageView() {
                           color: '#f59e0b',
                         }}
                       >
-                        {app.appName}
+                        {app.appName} ({app.keyCount})
                       </span>
                     )) || (
                       <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -278,7 +284,7 @@ export default function StorageView() {
           <tbody>
             {regularUsers.length > 0 ? (
               regularUsers.map((user) => {
-                const partition = partitions.find((p) => p.userId === user.userId);
+                const userStats = storageStats.find((s) => s.username === user.username);
                 return (
                   <tr
                     key={user.userId}
@@ -289,12 +295,12 @@ export default function StorageView() {
                       {user.username}
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {partition?.appPartitions.length || 0}
+                      {userStats?.apps?.length || 0}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-2">
-                        {partition && partition.appPartitions.length > 0 ? (
-                          partition.appPartitions.map((app) => (
+                        {userStats?.apps && userStats.apps.length > 0 ? (
+                          userStats.apps.map((app) => (
                             <span
                               key={app.appId}
                               className="text-xs px-2 py-1 rounded-full"
@@ -303,7 +309,7 @@ export default function StorageView() {
                                 color: 'var(--accent-purple-light)',
                               }}
                             >
-                              {app.appName}
+                              {app.appName} ({app.keyCount})
                             </span>
                           ))
                         ) : (
