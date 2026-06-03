@@ -57,7 +57,7 @@ export default function PasswordChangeModal() {
     }
 
     // Sync admin username in user management
-    const adminUser = users.find((u) => u.role === 'admin');
+    const adminUser = users.find((u) => u.role === 'admin' || u.role === 'owner');
     if (adminUser) {
       updateUser(adminUser.userId, { username: newUsername });
     }

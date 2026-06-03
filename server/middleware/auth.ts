@@ -47,7 +47,7 @@ export async function authMiddleware(req: AuthRequest, res: express.Response, ne
 }
 
 export function adminMiddleware(req: AuthRequest, res: express.Response, next: express.NextFunction) {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'owner')) {
     next(createError('Admin access required', 403, 'FORBIDDEN'));
     return;
   }

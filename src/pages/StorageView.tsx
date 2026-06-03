@@ -69,7 +69,7 @@ export default function StorageView() {
   // Get all users including admin
   const allUsers = users;
   const regularUsers = users.filter((u) => u.role === 'user');
-  const adminUser = users.find((u) => u.role === 'admin');
+  const adminUser = users.find((u) => u.role === 'admin' || u.role === 'owner');
 
   const totalKeys = storageStats.reduce((sum, s) => sum + s.keyCount, 0);
   const totalMemory = storageStats.reduce((sum, s) => sum + s.memoryUsage, 0);
