@@ -22,13 +22,21 @@ export async function initAdmin() {
         userId: 'admin',
         username,
         password: hashedPassword,
-        role: 'admin',
+        role: 'owner',
         createdAt: Date.now().toString(),
         updatedAt: Date.now().toString(),
         status: 'active',
         isDefault: 'true',
       });
-      console.log(`Default admin created: ${username}`);
+      console.log(`Default owner created: ${username}`);
+    } else {
+      // 确保已存在的 admin 角色为 owner
+      const adminData = await redisClient.hGetAll(ADMIN_KEY);
+      if (adminData.role !== 'owner') {
+        await redisClient.hSet(ADMIN_KEY, 'role', 'owner');
+        await redisClient.hSet(ADMIN_KEY, 'updatedAt', Date.now().toString());
+        console.log(`Updated admin role to owner: ${adminData.username}`);
+      }
     }
   } catch (error) {
     console.error('Failed to init admin:', error);

@@ -38,12 +38,12 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res, next) => {
       return sanitizeUser(user);
     });
 
-    // Add admin user
+    // Add admin/owner user
     const adminData = await redisClient.hGetAll('boxsync:admin');
     const admin: UserResponse = {
       userId: adminData.userId || 'admin',
       username: adminData.username || 'admin',
-      role: 'admin',
+      role: adminData.role || 'admin',
       createdAt: parseInt(adminData.createdAt || '0') || Date.now(),
       updatedAt: parseInt(adminData.updatedAt || '0') || Date.now(),
       status: adminData.status || 'active',
