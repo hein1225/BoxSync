@@ -31,19 +31,34 @@ export default function BackupRestore() {
         throw new Error('未登录或登录已过期，请重新登录');
       }
 
+      console.log('[Export] Starting export request...');
+      
       // 从后端 API 获取完整的备份数据（包含密码等敏感信息）
       const response = await fetch('/api/settings/export', {
+        method: 'GET',
         headers: {
-          Authorization: `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
       });
 
+      console.log('[Export] Response status:', response.status);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: '导出失败' }));
-        throw new Error(errorData.message || `导出失败 (${response.status})`);
+        let errorMessage = `导出失败 (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // 如果解析 JSON 失败，尝试获取文本
+          const text = await response.text();
+          if (text) errorMessage = text;
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
+      console.log('[Export] Response data:', result);
 
       if (!result.success || !result.data) {
         throw new Error('导出数据格式错误');
@@ -66,7 +81,7 @@ export default function BackupRestore() {
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 3000);
     } catch (error) {
-      console.error('Export error:', error);
+      console.error('[Export] Error:', error);
       setExportError(error instanceof Error ? error.message : '导出失败');
     }
   };

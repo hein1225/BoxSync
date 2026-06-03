@@ -87,6 +87,7 @@ router.post('/reset', authMiddleware, adminMiddleware, async (req, res, next) =>
 router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const redisClient = getRedisClient();
+    console.log('[Export] Starting export...');
 
     // 导出所有 Redis 数据，按 key 类型分类
     const exportData: Record<string, unknown> = {
@@ -95,67 +96,95 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
     };
 
     // 1. String 类型数据
+    console.log('[Export] Fetching all keys...');
     const allKeys = await redisClient.keys('boxsync:*');
+    console.log(`[Export] Found ${allKeys.length} keys`);
+    
     const stringKeys = allKeys.filter(k => 
       !k.includes(':users') && 
       !k.includes(':partitions') && 
       !k.includes(':logs')
     );
+    console.log(`[Export] Processing ${stringKeys.length} string keys`);
     
     for (const key of stringKeys) {
-      const value = await redisClient.get(key);
-      if (value) {
-        try {
-          exportData[key] = JSON.parse(value);
-        } catch {
-          exportData[key] = value; // 非 JSON 字符串直接存储
+      try {
+        const value = await redisClient.get(key);
+        if (value) {
+          try {
+            exportData[key] = JSON.parse(value);
+          } catch {
+            exportData[key] = value; // 非 JSON 字符串直接存储
+          }
         }
+      } catch (err) {
+        console.error(`[Export] Error reading key ${key}:`, err);
       }
     }
 
     // 2. Hash 类型数据 - users
-    const usersData = await redisClient.hGetAll('boxsync:users');
-    if (Object.keys(usersData).length > 0) {
-      exportData['boxsync:users'] = {};
-      for (const [field, value] of Object.entries(usersData)) {
-        try {
-          (exportData['boxsync:users'] as Record<string, unknown>)[field] = JSON.parse(value);
-        } catch {
-          (exportData['boxsync:users'] as Record<string, unknown>)[field] = value;
+    console.log('[Export] Fetching users...');
+    try {
+      const usersData = await redisClient.hGetAll('boxsync:users');
+      console.log(`[Export] Found ${Object.keys(usersData).length} users`);
+      if (Object.keys(usersData).length > 0) {
+        exportData['boxsync:users'] = {};
+        for (const [field, value] of Object.entries(usersData)) {
+          try {
+            (exportData['boxsync:users'] as Record<string, unknown>)[field] = JSON.parse(value);
+          } catch {
+            (exportData['boxsync:users'] as Record<string, unknown>)[field] = value;
+          }
         }
       }
+    } catch (err) {
+      console.error('[Export] Error reading users:', err);
     }
 
     // 3. Hash 类型数据 - partitions
-    const partitionsData = await redisClient.hGetAll('boxsync:partitions');
-    if (Object.keys(partitionsData).length > 0) {
-      exportData['boxsync:partitions'] = {};
-      for (const [field, value] of Object.entries(partitionsData)) {
-        try {
-          (exportData['boxsync:partitions'] as Record<string, unknown>)[field] = JSON.parse(value);
-        } catch {
-          (exportData['boxsync:partitions'] as Record<string, unknown>)[field] = value;
+    console.log('[Export] Fetching partitions...');
+    try {
+      const partitionsData = await redisClient.hGetAll('boxsync:partitions');
+      console.log(`[Export] Found ${Object.keys(partitionsData).length} partitions`);
+      if (Object.keys(partitionsData).length > 0) {
+        exportData['boxsync:partitions'] = {};
+        for (const [field, value] of Object.entries(partitionsData)) {
+          try {
+            (exportData['boxsync:partitions'] as Record<string, unknown>)[field] = JSON.parse(value);
+          } catch {
+            (exportData['boxsync:partitions'] as Record<string, unknown>)[field] = value;
+          }
         }
       }
+    } catch (err) {
+      console.error('[Export] Error reading partitions:', err);
     }
 
     // 4. List 类型数据 - logs
-    const logsData = await redisClient.lRange('boxsync:logs', 0, -1);
-    if (logsData.length > 0) {
-      exportData['boxsync:logs'] = logsData.map(log => {
-        try {
-          return JSON.parse(log);
-        } catch {
-          return log;
-        }
-      });
+    console.log('[Export] Fetching logs...');
+    try {
+      const logsData = await redisClient.lRange('boxsync:logs', 0, -1);
+      console.log(`[Export] Found ${logsData.length} logs`);
+      if (logsData.length > 0) {
+        exportData['boxsync:logs'] = logsData.map(log => {
+          try {
+            return JSON.parse(log);
+          } catch {
+            return log;
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[Export] Error reading logs:', err);
     }
 
+    console.log('[Export] Export completed successfully');
     res.json({
       success: true,
       data: exportData,
     });
   } catch (error) {
+    console.error('[Export] Export failed:', error);
     next(error);
   }
 });
