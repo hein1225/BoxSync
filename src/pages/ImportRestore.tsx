@@ -13,6 +13,7 @@ export default function ImportRestore() {
   const [error, setError] = useState('');
   const [progress, setProgress] = useState('');
   const [stats, setStats] = useState<{ users: number; stringKeys: number; hashKeys: number; listKeys: number } | null>(null);
+  const [initialPassword, setInitialPassword] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,9 +67,12 @@ export default function ImportRestore() {
 
       const result = await response.json();
 
-      // 保存统计信息
+      // 保存统计信息和初始密码
       if (result.stats) {
         setStats(result.stats);
+      }
+      if (result.initialPassword) {
+        setInitialPassword(result.initialPassword);
       }
 
       setStep('success');
@@ -323,12 +327,35 @@ export default function ImportRestore() {
               </div>
             )}
 
+            {initialPassword && (
+              <div
+                className="rounded-xl p-4 mb-4 text-sm"
+                style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}
+              >
+                <p className="font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                  重要提示
+                </p>
+                <p className="mb-2" style={{ color: 'var(--text-secondary)' }}>
+                  由于备份中没有用户数据，系统已自动创建初始管理员账号：
+                </p>
+                <div className="rounded-lg p-3 mb-3" style={{ backgroundColor: 'var(--bg-primary)' }}>
+                  <p className="font-mono text-sm" style={{ color: 'var(--text-primary)' }}>
+                    用户名: admin<br />
+                    密码: {initialPassword}
+                  </p>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--accent-red)' }}>
+                  安全建议：登录后请立即进入「用户管理」删除或修改初始管理员账号的密码！
+                </p>
+              </div>
+            )}
+
             <div
               className="rounded-xl p-4 mb-6 text-sm"
-              style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}
+              style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)' }}
             >
               <p style={{ color: 'var(--text-primary)' }}>
-                系统需要重启以应用新数据。点击下面的按钮完成重启并返回登录页面。
+                点击下面的按钮完成重启并返回登录页面。
               </p>
             </div>
 
