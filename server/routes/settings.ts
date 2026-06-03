@@ -280,39 +280,74 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     }
 
-    // 检查是否有站长账号，如果没有则创建初始站长
+    // 处理站长账号逻辑
     let usersData = await redisClient.hGetAll('boxsync:users');
 
-    // 检查是否已存在站长（owner）
-    const hasOwner = Object.values(usersData).some(userStr => {
-      try {
-        const user = JSON.parse(userStr);
-        return user.role === 'owner';
-      } catch {
-        return false;
+    // 从备份的 users 中查找站长
+    let backupOwner: { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string } | null = null;
+    if (backupData['boxsync:users']) {
+      for (const [, userStr] of Object.entries(backupData['boxsync:users'] as Record<string, unknown>)) {
+        try {
+          const user = typeof userStr === 'string' ? JSON.parse(userStr) : userStr;
+          if (user.role === 'owner') {
+            backupOwner = user;
+            break;
+          }
+        } catch {
+          // ignore
+        }
       }
-    });
-
-    // 如果没有站长账号，创建初始站长账号（固定密码 admin123）
-    let initialPassword: string | undefined;
-    if (!hasOwner) {
-      initialPassword = 'admin123';
-      const hashedPassword = await bcrypt.hash(initialPassword, 10);
-      const ownerUser = {
-        userId: 'owner',
-        username: 'admin',
-        password: hashedPassword,
-        role: 'owner',
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await redisClient.hSet('boxsync:users', 'owner', JSON.stringify(ownerUser));
-      console.log('[Import] Created initial owner account');
-
-      // 重新读取用户数据
-      usersData = await redisClient.hGetAll('boxsync:users');
     }
+
+    // 从备份的 admin 中查找站长
+    if (!backupOwner && backupData['boxsync:admin']) {
+      const admin = backupData['boxsync:admin'] as { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string };
+      if (admin.role === 'owner') {
+        backupOwner = {
+          userId: admin.userId,
+          username: admin.username,
+          password: admin.password,
+          role: admin.role,
+          status: admin.status,
+          createdAt: admin.createdAt,
+          updatedAt: admin.updatedAt,
+        };
+      }
+    }
+
+    if (backupOwner) {
+      // 备份中有站长，恢复站长到 boxsync:admin
+      console.log(`[Import] Restoring owner from backup: ${backupOwner.username}`);
+      await redisClient.hSet('boxsync:admin', {
+        userId: backupOwner.userId || 'admin',
+        username: backupOwner.username || 'admin',
+        password: backupOwner.password || '',
+        role: 'owner',
+        status: backupOwner.status || 'active',
+        createdAt: backupOwner.createdAt || Date.now().toString(),
+        updatedAt: Date.now().toString(),
+      });
+
+      // 删除 boxsync:users 中的站长（如果有），因为站长应该在 boxsync:admin 中
+      for (const [field, userStr] of Object.entries(usersData)) {
+        try {
+          const user = JSON.parse(userStr);
+          if (user.role === 'owner') {
+            await redisClient.hDel('boxsync:users', field);
+            console.log(`[Import] Removed duplicate owner from users: ${user.username}`);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } else {
+      // 备份中没有站长，确保现有站长保留
+      console.log('[Import] No owner found in backup, keeping existing admin');
+      // 不创建新站长，保留现有的 boxsync:admin
+    }
+
+    // 重新读取用户数据
+    usersData = await redisClient.hGetAll('boxsync:users');
 
     const userCount = Object.keys(usersData).length;
 
@@ -321,9 +356,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
 
     res.json({
       success: true,
-      message: initialPassword
-        ? '备份恢复完成。已创建初始站长账号，请查看响应中的密码'
-        : 'Backup restored successfully. All existing data has been replaced. Please login again.',
+      message: 'Backup restored successfully. All existing data has been replaced. Please login again.',
       stats: {
         users: userCount,
         stringKeys: stringCount,
@@ -331,7 +364,6 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
         listKeys: listCount,
       },
       requireRelogin: true,
-      initialPassword: initialPassword,
     });
   } catch (error) {
     await logAdmin('import', `管理员 ${currentUser.username} 恢复备份失败`, currentUser.userId, currentUser.username, ip, false, (error as Error).message);
@@ -399,40 +431,70 @@ router.post('/import-public', async (req, res, next) => {
       }
     }
 
-    // 检查是否有站长账号，如果没有则创建初始站长
+    // 处理站长账号逻辑（与 import 端点相同）
     let usersData = await redisClient.hGetAll('boxsync:users');
 
-    // 检查是否已存在站长（owner）
-    const hasOwner = Object.values(usersData).some(userStr => {
-      try {
-        const user = JSON.parse(userStr as string);
-        return user.role === 'owner';
-      } catch {
-        return false;
+    // 从备份的 users 中查找站长
+    let backupOwner: { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string } | null = null;
+    if (backupData['boxsync:users']) {
+      for (const [, userStr] of Object.entries(backupData['boxsync:users'] as Record<string, unknown>)) {
+        try {
+          const user = typeof userStr === 'string' ? JSON.parse(userStr) : userStr;
+          if (user.role === 'owner') {
+            backupOwner = user;
+            break;
+          }
+        } catch {
+          // ignore
+        }
       }
-    });
-
-    // 如果没有站长账号，创建初始站长账号（固定密码 admin123）
-    let initialPassword: string | undefined;
-    if (!hasOwner) {
-      initialPassword = 'admin123';
-      const hashedPassword = await bcrypt.hash(initialPassword, 10);
-      const ownerUser = {
-        userId: 'owner',
-        username: 'admin',
-        password: hashedPassword,
-        role: 'owner',
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      await redisClient.hSet('boxsync:users', 'owner', JSON.stringify(ownerUser));
-      console.log('[Import] Created initial owner account');
-
-      // 重新读取用户数据
-      usersData = await redisClient.hGetAll('boxsync:users');
     }
 
+    // 从备份的 admin 中查找站长
+    if (!backupOwner && backupData['boxsync:admin']) {
+      const admin = backupData['boxsync:admin'] as { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string };
+      if (admin.role === 'owner') {
+        backupOwner = {
+          userId: admin.userId,
+          username: admin.username,
+          password: admin.password,
+          role: admin.role,
+          status: admin.status,
+          createdAt: admin.createdAt,
+          updatedAt: admin.updatedAt,
+        };
+      }
+    }
+
+    if (backupOwner) {
+      // 备份中有站长，恢复站长到 boxsync:admin
+      console.log(`[Import] Restoring owner from backup: ${backupOwner.username}`);
+      await redisClient.hSet('boxsync:admin', {
+        userId: backupOwner.userId || 'admin',
+        username: backupOwner.username || 'admin',
+        password: backupOwner.password || '',
+        role: 'owner',
+        status: backupOwner.status || 'active',
+        createdAt: backupOwner.createdAt || Date.now().toString(),
+        updatedAt: Date.now().toString(),
+      });
+
+      // 删除 boxsync:users 中的站长（如果有）
+      for (const [field, userStr] of Object.entries(usersData)) {
+        try {
+          const user = JSON.parse(userStr as string);
+          if (user.role === 'owner') {
+            await redisClient.hDel('boxsync:users', field);
+            console.log(`[Import] Removed duplicate owner from users: ${user.username}`);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 重新读取用户数据
+    usersData = await redisClient.hGetAll('boxsync:users');
     const userCount = Object.keys(usersData).length;
 
     // 记录恢复操作到日志（系统级别）
@@ -440,9 +502,7 @@ router.post('/import-public', async (req, res, next) => {
 
     res.json({
       success: true,
-      message: initialPassword
-        ? '备份恢复完成。已创建初始站长账号，请查看响应中的密码'
-        : 'Backup restored successfully. All existing data has been replaced. Please login again.',
+      message: 'Backup restored successfully. All existing data has been replaced. Please login again.',
       stats: {
         users: userCount,
         stringKeys: stringCount,
@@ -450,7 +510,6 @@ router.post('/import-public', async (req, res, next) => {
         listKeys: listCount,
       },
       requireRelogin: true,
-      initialPassword: initialPassword,
     });
   } catch (error) {
     await logAdmin('import', `恢复备份失败`, 'system', 'system', ip, false, (error as Error).message);
