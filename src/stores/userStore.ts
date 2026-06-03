@@ -6,7 +6,7 @@ interface UserState {
   loading: boolean;
   error: string | null;
   fetchUsers: () => Promise<void>;
-  addUser: (user: { username: string; password: string; role: 'admin' | 'user' }) => Promise<boolean>;
+  addUser: (user: { username: string; password: string; role: 'owner' | 'admin' | 'user' }) => Promise<boolean>;
   updateUser: (userId: string, updates: Partial<User>) => Promise<boolean>;
   deleteUser: (userId: string) => Promise<boolean>;
   toggleStatus: (userId: string) => Promise<boolean>;

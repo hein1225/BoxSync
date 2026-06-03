@@ -70,6 +70,11 @@ router.post('/', authMiddleware, adminMiddleware, async (req: AuthRequest, res, 
       throw createError('Username and password are required', 400, 'INVALID_INPUT');
     }
 
+    // 禁止创建站长角色
+    if (role === 'owner') {
+      throw createError('Cannot create owner role', 403, 'FORBIDDEN');
+    }
+
     const usersData = await redisClient.hGetAll('boxsync:users');
     const users = Object.values(usersData).map((u) => JSON.parse(u));
     if (users.some((u) => u.username === username)) {
@@ -129,6 +134,16 @@ router.put('/:userId', authMiddleware, adminMiddleware, async (req: AuthRequest,
 
     const user = JSON.parse(userData);
     const oldUsername = user.username;
+
+    // 禁止修改站长角色
+    if (user.role === 'owner') {
+      throw createError('Cannot modify owner user', 403, 'FORBIDDEN');
+    }
+    // 禁止将用户修改为站长角色
+    if (role === 'owner') {
+      throw createError('Cannot assign owner role', 403, 'FORBIDDEN');
+    }
+
     if (username) user.username = username;
     if (role) user.role = role;
     if (status) user.status = status;
@@ -164,6 +179,12 @@ router.patch('/:userId/status', authMiddleware, adminMiddleware, async (req: Aut
     }
 
     const user = JSON.parse(userData);
+
+    // 禁止禁用站长
+    if (user.role === 'owner') {
+      throw createError('Cannot toggle owner user status', 403, 'FORBIDDEN');
+    }
+
     const newStatus = user.status === 'active' ? 'disabled' : 'active';
     user.status = newStatus;
     user.updatedAt = Date.now();
@@ -198,6 +219,12 @@ router.delete('/:userId', authMiddleware, adminMiddleware, async (req: AuthReque
     }
 
     const user = JSON.parse(userData);
+
+    // 禁止删除站长
+    if (user.role === 'owner') {
+      throw createError('Cannot delete owner user', 403, 'FORBIDDEN');
+    }
+
     const deletedUsername = user.username;
 
     await redisClient.hDel('boxsync:users', userId);

@@ -2,7 +2,7 @@ export interface User {
   userId: string;
   username: string;
   password?: string;
-  role: 'admin' | 'user';
+  role: 'owner' | 'admin' | 'user';
   createdAt: number;
   updatedAt: number;
   status: 'active' | 'disabled';
@@ -26,7 +26,7 @@ export interface AppPartition {
 export interface CreateUserRequest {
   username: string;
   password: string;
-  role: 'admin' | 'user';
+  role: 'owner' | 'admin' | 'user';
 }
 
 export interface StorageStats {
