@@ -33,7 +33,8 @@ export default function UserManage() {
   const handleEdit = (user: User) => {
     setEditingUser(user);
     setShowPasswordField(false);
-    setFormData({ username: user.username, password: '', role: user.role });
+    // 站长角色不能通过表单编辑，如果是站长则默认为 admin（实际上后端会拒绝）
+    setFormData({ username: user.username, password: '', role: user.role === 'owner' ? 'admin' : user.role });
     setShowModal(true);
   };
 
