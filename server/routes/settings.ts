@@ -316,8 +316,8 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
     }
 
     if (backupOwner) {
-      // 备份中有站长，恢复站长到 boxsync:owner
-      console.log(`[Import] Restoring owner from backup: ${backupOwner.username}`);
+      // 备份中有站长，修改现有站长账号为备份值
+      console.log(`[Import] Updating owner from backup: ${backupOwner.username}`);
       await redisClient.hSet('boxsync:owner', {
         userId: backupOwner.userId || 'owner',
         username: backupOwner.username || 'admin',
@@ -467,8 +467,8 @@ router.post('/import-public', async (req, res, next) => {
     }
 
     if (backupOwner) {
-      // 备份中有站长，恢复站长到 boxsync:owner
-      console.log(`[Import] Restoring owner from backup: ${backupOwner.username}`);
+      // 备份中有站长，修改现有站长账号为备份值
+      console.log(`[Import] Updating owner from backup: ${backupOwner.username}`);
       await redisClient.hSet('boxsync:owner', {
         userId: backupOwner.userId || 'owner',
         username: backupOwner.username || 'admin',
@@ -530,21 +530,9 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
 
     // 2. 保存当前站长账号信息
     const ownerData = await redisClient.hGetAll('boxsync:owner');
-    let ownerUser: { userId: string; username: string; password: string; role: string; status: string; createdAt: string; updatedAt: string } | null = null;
+    console.log('[ClearAll] Current owner data:', JSON.stringify(ownerData));
     
-    if (ownerData && ownerData.username) {
-      ownerUser = {
-        userId: ownerData.userId || 'owner',
-        username: ownerData.username,
-        password: ownerData.password,
-        role: ownerData.role || 'owner',
-        status: ownerData.status || 'active',
-        createdAt: ownerData.createdAt || Date.now().toString(),
-        updatedAt: ownerData.updatedAt || Date.now().toString(),
-      };
-    }
-
-    // 3. Clear all users
+    // 3. Clear all users (保留站长)
     await redisClient.del('boxsync:users');
 
     // 4. Clear all logs
@@ -565,18 +553,24 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
       await redisClient.del(key);
     }
 
-    // 8. 恢复站长账号到 boxsync:owner（如果有则保留用户名，密码恢复为 admin123）
+    // 8. 恢复站长账号为初始值（用户名 admin，密码 admin123）
     const hashedPassword = await bcrypt.hash('admin123', 10);
-    const ownerAccount = {
-      userId: ownerUser?.userId || 'owner',
-      username: ownerUser?.username || 'admin',
+    
+    console.log(`[ClearAll] Resetting owner account to default: username=admin, password=admin123`);
+    
+    await redisClient.hSet('boxsync:owner', {
+      userId: 'owner',
+      username: 'admin',
       password: hashedPassword,
       role: 'owner',
       status: 'active',
-      createdAt: ownerUser?.createdAt || Date.now().toString(),
+      createdAt: Date.now().toString(),
       updatedAt: Date.now().toString(),
-    };
-    await redisClient.hSet('boxsync:owner', ownerAccount);
+    });
+    
+    // 验证写入是否成功
+    const verifyOwner = await redisClient.hGetAll('boxsync:owner');
+    console.log('[ClearAll] Verified owner data:', JSON.stringify(verifyOwner));
 
     // Log the action
     await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据并恢复站长账号`, user.userId, user.username, ip, true);
