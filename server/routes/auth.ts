@@ -14,7 +14,7 @@ export async function initAdmin() {
   try {
     const redisClient = getRedisClient();
     console.log('[InitAdmin] Checking if admin exists...');
-    const exists = await redisClient.exists(ADMIN_KEY);
+    const exists = await redisClient.exists(OWNER_KEY);
     console.log(`[InitAdmin] Owner exists: ${exists}`);
 
     if (!exists) {
