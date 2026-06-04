@@ -44,8 +44,8 @@ router.get('/debug', authMiddleware, adminMiddleware, async (req, res) => {
     // 获取所有 keys
     const allKeys = await redisClient.keys('boxsync:*');
 
-    // 获取 admin 数据
-    const adminData = await redisClient.hGetAll('boxsync:admin');
+    // 获取 owner 数据
+    const ownerData = await redisClient.hGetAll('boxsync:owner');
 
     // 获取 users 数据
     const usersData = await redisClient.hGetAll('boxsync:users');
@@ -67,7 +67,7 @@ router.get('/debug', authMiddleware, adminMiddleware, async (req, res) => {
         total: allKeys.length,
         list: allKeys.slice(0, 20), // 只显示前20个
       },
-      admin: adminData,
+      owner: ownerData,
       users: {
         count: users.length,
         list: users,

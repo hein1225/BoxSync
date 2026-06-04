@@ -6,7 +6,7 @@ import { createError } from '../middleware/error.js';
 import { logAuth } from '../utils/logger.js';
 
 const router = Router();
-const ADMIN_KEY = 'boxsync:admin';
+const OWNER_KEY = 'boxsync:owner';
 const SESSION_PREFIX = 'boxsync:session:';
 
 // Initialize default admin - called after Redis is connected
@@ -15,15 +15,15 @@ export async function initAdmin() {
     const redisClient = getRedisClient();
     console.log('[InitAdmin] Checking if admin exists...');
     const exists = await redisClient.exists(ADMIN_KEY);
-    console.log(`[InitAdmin] Admin exists: ${exists}`);
+    console.log(`[InitAdmin] Owner exists: ${exists}`);
 
     if (!exists) {
       console.log('[InitAdmin] Creating default owner account...');
       const username = process.env.ADMIN_USERNAME || 'admin';
       const password = process.env.ADMIN_PASSWORD || 'admin123';
       const hashedPassword = await bcrypt.hash(password, 10);
-      await redisClient.hSet(ADMIN_KEY, {
-        userId: 'admin',
+      await redisClient.hSet(OWNER_KEY, {
+        userId: 'owner',
         username,
         password: hashedPassword,
         role: 'owner',
@@ -34,13 +34,13 @@ export async function initAdmin() {
       });
       console.log(`[InitAdmin] Default owner created: ${username}`);
     } else {
-      // 确保已存在的 admin 角色为 owner
-      const adminData = await redisClient.hGetAll(ADMIN_KEY);
-      console.log(`[InitAdmin] Existing admin found: ${adminData.username}, role: ${adminData.role}`);
-      if (adminData.role !== 'owner') {
-        await redisClient.hSet(ADMIN_KEY, 'role', 'owner');
-        await redisClient.hSet(ADMIN_KEY, 'updatedAt', Date.now().toString());
-        console.log(`[InitAdmin] Updated admin role to owner: ${adminData.username}`);
+      // 确保已存在的 owner 角色正确
+      const ownerData = await redisClient.hGetAll(OWNER_KEY);
+      console.log(`[InitAdmin] Existing owner found: ${ownerData.username}, role: ${ownerData.role}`);
+      if (ownerData.role !== 'owner') {
+        await redisClient.hSet(OWNER_KEY, 'role', 'owner');
+        await redisClient.hSet(OWNER_KEY, 'updatedAt', Date.now().toString());
+        console.log(`[InitAdmin] Updated owner role: ${ownerData.username}`);
       }
     }
   } catch (error) {
@@ -60,32 +60,32 @@ router.post('/login', async (req, res, next) => {
       throw createError('Username and password are required', 400, 'INVALID_INPUT');
     }
 
-    // Check admin first
-    const adminData = await redisClient.hGetAll(ADMIN_KEY);
-    console.log('Login attempt - Admin data:', JSON.stringify(adminData));
-    if (adminData && adminData.username === username) {
-      const valid = await bcrypt.compare(password, adminData.password);
+    // Check owner first
+    const ownerData = await redisClient.hGetAll(OWNER_KEY);
+    console.log('Login attempt - Owner data:', JSON.stringify(ownerData));
+    if (ownerData && ownerData.username === username) {
+      const valid = await bcrypt.compare(password, ownerData.password);
       if (!valid) {
-        await logAuth('login', `登录失败：管理员 ${username} 密码错误`, adminData.userId, username, ip, false, '密码错误');
+        await logAuth('login', `登录失败：站长 ${username} 密码错误`, ownerData.userId, username, ip, false, '密码错误');
         throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
       }
 
-      const token = generateToken(adminData.userId, adminData.username, adminData.role);
+      const token = generateToken(ownerData.userId, ownerData.username, ownerData.role);
       await redisClient.setEx(`${SESSION_PREFIX}${token}`, 604800, JSON.stringify({
-        userId: adminData.userId,
-        username: adminData.username,
-        role: adminData.role,
+        userId: ownerData.userId,
+        username: ownerData.username,
+        role: ownerData.role,
       }));
 
-      await logAuth('login', `管理员 ${username} 登录成功`, adminData.userId, username, ip, true);
+      await logAuth('login', `站长 ${username} 登录成功`, ownerData.userId, username, ip, true);
 
       res.json({
         success: true,
         token,
-        userId: adminData.userId,
-        username: adminData.username,
-        role: adminData.role,
-        isDefault: adminData.isDefault === 'true',
+        userId: ownerData.userId,
+        username: ownerData.username,
+        role: ownerData.role,
+        isDefault: ownerData.isDefault === 'true',
       });
       return;
     }
@@ -212,7 +212,7 @@ router.post('/logout', async (req, res, next) => {
   }
 });
 
-// Update admin credentials
+// Update owner credentials
 router.post('/update-credentials', async (req, res, next) => {
   try {
     const redisClient = getRedisClient();
@@ -222,7 +222,7 @@ router.post('/update-credentials', async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    await redisClient.hSet(ADMIN_KEY, {
+    await redisClient.hSet(OWNER_KEY, {
       username,
       password: hashedPassword,
       updatedAt: Date.now().toString(),

@@ -42,23 +42,23 @@ router.get('/', authMiddleware, adminMiddleware, async (req, res, next) => {
       return sanitizeUser(user);
     });
 
-    // Add admin/owner user
-    const adminData = await redisClient.hGetAll('boxsync:admin');
-    console.log(`[GetUsers] Admin data:`, adminData);
+    // Add owner user
+    const ownerData = await redisClient.hGetAll('boxsync:owner');
+    console.log(`[GetUsers] Owner data:`, ownerData);
 
-    const admin: UserResponse = {
-      userId: adminData.userId || 'admin',
-      username: adminData.username || 'admin',
-      role: adminData.role || 'admin',
-      createdAt: parseInt(adminData.createdAt || '0') || Date.now(),
-      updatedAt: parseInt(adminData.updatedAt || '0') || Date.now(),
-      status: adminData.status || 'active',
+    const owner: UserResponse = {
+      userId: ownerData.userId || 'owner',
+      username: ownerData.username || 'admin',
+      role: ownerData.role || 'owner',
+      createdAt: parseInt(ownerData.createdAt || '0') || Date.now(),
+      updatedAt: parseInt(ownerData.updatedAt || '0') || Date.now(),
+      status: ownerData.status || 'active',
     };
 
     console.log(`[GetUsers] Returning ${users.length + 1} users total`);
     res.json({
       success: true,
-      users: [admin, ...users],
+      users: [owner, ...users],
     });
   } catch (error) {
     console.error('[GetUsers] Error:', error);

@@ -369,8 +369,8 @@ sudo journalctl -u boxsync -f
 ### Redis Key 设计
 
 ```
-boxsync:admin                          # 管理员账户信息
-boxsync:users                          # 普通用户列表（Hash）
+boxsync:owner                          # 站长账户信息（唯一，最高权限）
+boxsync:users                          # 管理员和普通用户列表（Hash）
 boxsync:partitions                     # 用户存储分区（Hash）
 boxsync:settings                       # 服务器设置
 boxsync:logs                           # 操作日志（List）

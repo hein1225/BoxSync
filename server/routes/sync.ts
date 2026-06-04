@@ -369,13 +369,13 @@ router.get('/admin/stats', authMiddleware, adminMiddleware, async (req, res, nex
 
     // Get all users
     const usersData = await redisClient.hGetAll('boxsync:users');
-    const adminData = await redisClient.hGetAll('boxsync:admin');
+    const ownerData = await redisClient.hGetAll('boxsync:owner');
 
     const allUsers = [
       {
-        userId: adminData.userId || 'admin',
-        username: adminData.username || 'admin',
-        role: 'admin',
+        userId: ownerData.userId || 'owner',
+        username: ownerData.username || 'admin',
+        role: 'owner',
       },
       ...Object.values(usersData).map((u) => {
         const user = JSON.parse(u);

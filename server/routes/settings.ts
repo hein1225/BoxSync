@@ -148,19 +148,19 @@ router.get('/export', authMiddleware, adminMiddleware, async (req, res, next) =>
       console.error('[Export] Error reading users:', err);
     }
 
-    // 3. Hash 类型数据 - admin (站长账号)
-    console.log('[Export] Fetching admin...');
+    // 3. Hash 类型数据 - owner (站长账号)
+    console.log('[Export] Fetching owner...');
     try {
-      const adminData = await redisClient.hGetAll('boxsync:admin');
-      console.log(`[Export] Found admin: ${adminData.username || 'none'}`);
-      if (Object.keys(adminData).length > 0) {
-        exportData['boxsync:admin'] = {};
-        for (const [field, value] of Object.entries(adminData)) {
-          (exportData['boxsync:admin'] as Record<string, string>)[field] = value;
+      const ownerData = await redisClient.hGetAll('boxsync:owner');
+      console.log(`[Export] Found owner: ${ownerData.username || 'none'}`);
+      if (Object.keys(ownerData).length > 0) {
+        exportData['boxsync:owner'] = {};
+        for (const [field, value] of Object.entries(ownerData)) {
+          (exportData['boxsync:owner'] as Record<string, string>)[field] = value;
         }
       }
     } catch (err) {
-      console.error('[Export] Error reading admin:', err);
+      console.error('[Export] Error reading owner:', err);
     }
 
     // 4. Hash 类型数据 - partitions
@@ -247,7 +247,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       // 跳过元数据字段
       if (key === 'version' || key === 'exportTime') continue;
 
-      if (key === 'boxsync:admin' || key === 'boxsync:users' || key === 'boxsync:partitions') {
+      if (key === 'boxsync:owner' || key === 'boxsync:users' || key === 'boxsync:partitions') {
         // Hash 类型数据
         if (value && typeof value === 'object') {
           const entries = Object.entries(value as Record<string, unknown>);
@@ -256,8 +256,8 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
             if (key === 'boxsync:users') {
               const userObj = fieldValue as Record<string, unknown>;
               console.log(`[Import] Restoring user: ${userObj.username} (${field}), role: ${userObj.role}`);
-            } else if (key === 'boxsync:admin') {
-              console.log(`[Import] Restoring admin field: ${field}`);
+            } else if (key === 'boxsync:owner') {
+              console.log(`[Import] Restoring owner field: ${field}`);
             }
             await redisClient.hSet(key, field, typeof fieldValue === 'string' ? fieldValue : JSON.stringify(fieldValue));
           }
@@ -299,27 +299,27 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     }
 
-    // 从备份的 admin 中查找站长
-    if (!backupOwner && backupData['boxsync:admin']) {
-      const admin = backupData['boxsync:admin'] as { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string };
-      if (admin.role === 'owner') {
+    // 从备份的 owner 中查找站长
+    if (!backupOwner && backupData['boxsync:owner']) {
+      const owner = backupData['boxsync:owner'] as { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string };
+      if (owner.role === 'owner') {
         backupOwner = {
-          userId: admin.userId,
-          username: admin.username,
-          password: admin.password,
-          role: admin.role,
-          status: admin.status,
-          createdAt: admin.createdAt,
-          updatedAt: admin.updatedAt,
+          userId: owner.userId,
+          username: owner.username,
+          password: owner.password,
+          role: owner.role,
+          status: owner.status,
+          createdAt: owner.createdAt,
+          updatedAt: owner.updatedAt,
         };
       }
     }
 
     if (backupOwner) {
-      // 备份中有站长，恢复站长到 boxsync:admin
+      // 备份中有站长，恢复站长到 boxsync:owner
       console.log(`[Import] Restoring owner from backup: ${backupOwner.username}`);
-      await redisClient.hSet('boxsync:admin', {
-        userId: backupOwner.userId || 'admin',
+      await redisClient.hSet('boxsync:owner', {
+        userId: backupOwner.userId || 'owner',
         username: backupOwner.username || 'admin',
         password: backupOwner.password || '',
         role: 'owner',
@@ -328,7 +328,7 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
         updatedAt: Date.now().toString(),
       });
 
-      // 删除 boxsync:users 中的站长（如果有），因为站长应该在 boxsync:admin 中
+      // 删除 boxsync:users 中的站长（如果有），因为站长应该在 boxsync:owner 中
       for (const [field, userStr] of Object.entries(usersData)) {
         try {
           const user = JSON.parse(userStr);
@@ -342,8 +342,8 @@ router.post('/import', authMiddleware, adminMiddleware, async (req: AuthRequest,
       }
     } else {
       // 备份中没有站长，确保现有站长保留
-      console.log('[Import] No owner found in backup, keeping existing admin');
-      // 不创建新站长，保留现有的 boxsync:admin
+      console.log('[Import] No owner found in backup, keeping existing owner');
+      // 不创建新站长，保留现有的 boxsync:owner
     }
 
     // 重新读取用户数据
@@ -406,7 +406,7 @@ router.post('/import-public', async (req, res, next) => {
       // 跳过元数据字段
       if (key === 'version' || key === 'exportTime') continue;
 
-      if (key === 'boxsync:admin' || key === 'boxsync:users' || key === 'boxsync:partitions') {
+      if (key === 'boxsync:owner' || key === 'boxsync:users' || key === 'boxsync:partitions') {
         // Hash 类型数据
         if (value && typeof value === 'object') {
           for (const [field, fieldValue] of Object.entries(value as Record<string, unknown>)) {
@@ -450,27 +450,27 @@ router.post('/import-public', async (req, res, next) => {
       }
     }
 
-    // 从备份的 admin 中查找站长
-    if (!backupOwner && backupData['boxsync:admin']) {
-      const admin = backupData['boxsync:admin'] as { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string };
-      if (admin.role === 'owner') {
+    // 从备份的 owner 中查找站长
+    if (!backupOwner && backupData['boxsync:owner']) {
+      const owner = backupData['boxsync:owner'] as { userId?: string; username?: string; password?: string; role?: string; status?: string; createdAt?: string; updatedAt?: string };
+      if (owner.role === 'owner') {
         backupOwner = {
-          userId: admin.userId,
-          username: admin.username,
-          password: admin.password,
-          role: admin.role,
-          status: admin.status,
-          createdAt: admin.createdAt,
-          updatedAt: admin.updatedAt,
+          userId: owner.userId,
+          username: owner.username,
+          password: owner.password,
+          role: owner.role,
+          status: owner.status,
+          createdAt: owner.createdAt,
+          updatedAt: owner.updatedAt,
         };
       }
     }
 
     if (backupOwner) {
-      // 备份中有站长，恢复站长到 boxsync:admin
+      // 备份中有站长，恢复站长到 boxsync:owner
       console.log(`[Import] Restoring owner from backup: ${backupOwner.username}`);
-      await redisClient.hSet('boxsync:admin', {
-        userId: backupOwner.userId || 'admin',
+      await redisClient.hSet('boxsync:owner', {
+        userId: backupOwner.userId || 'owner',
         username: backupOwner.username || 'admin',
         password: backupOwner.password || '',
         role: 'owner',
@@ -529,19 +529,19 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
     await redisClient.set(SETTINGS_KEY, JSON.stringify(defaultSettings));
 
     // 2. 保存当前站长账号信息
-    const usersData = await redisClient.hGetAll('boxsync:users');
+    const ownerData = await redisClient.hGetAll('boxsync:owner');
     let ownerUser: { userId: string; username: string; password: string; role: string; status: string; createdAt: string; updatedAt: string } | null = null;
     
-    for (const [field, value] of Object.entries(usersData)) {
-      try {
-        const userObj = JSON.parse(value);
-        if (userObj.role === 'owner') {
-          ownerUser = userObj;
-          break;
-        }
-      } catch {
-        // ignore
-      }
+    if (ownerData && ownerData.username) {
+      ownerUser = {
+        userId: ownerData.userId || 'owner',
+        username: ownerData.username,
+        password: ownerData.password,
+        role: ownerData.role || 'owner',
+        status: ownerData.status || 'active',
+        createdAt: ownerData.createdAt || Date.now().toString(),
+        updatedAt: ownerData.updatedAt || Date.now().toString(),
+      };
     }
 
     // 3. Clear all users
@@ -565,7 +565,7 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
       await redisClient.del(key);
     }
 
-    // 8. 恢复站长账号（如果有则保留用户名，密码恢复为 admin123）
+    // 8. 恢复站长账号到 boxsync:owner（如果有则保留用户名，密码恢复为 admin123）
     const hashedPassword = await bcrypt.hash('admin123', 10);
     const ownerAccount = {
       userId: ownerUser?.userId || 'owner',
@@ -573,10 +573,10 @@ router.post('/clear-all', authMiddleware, adminMiddleware, async (req: AuthReque
       password: hashedPassword,
       role: 'owner',
       status: 'active',
-      createdAt: ownerUser?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: ownerUser?.createdAt || Date.now().toString(),
+      updatedAt: Date.now().toString(),
     };
-    await redisClient.hSet('boxsync:users', ownerAccount.userId, JSON.stringify(ownerAccount));
+    await redisClient.hSet('boxsync:owner', ownerAccount);
 
     // Log the action
     await logAdmin('clear_all', `管理员 ${user.username} 清空了所有数据并恢复站长账号`, user.userId, user.username, ip, true);
