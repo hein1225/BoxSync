@@ -188,73 +188,7 @@ export default function StorageView() {
         </div>
       </div>
 
-      {/* Admin Storage Section */}
-      {adminUser && (
-        <div
-          className="rounded-2xl overflow-hidden"
-          style={{
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-          }}
-        >
-          <div className="px-6 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
-            <Shield className="w-4 h-4" style={{ color: '#f59e0b' }} />
-            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-              管理员存储详情
-            </h2>
-          </div>
-          <table className="w-full">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                <th className="text-left px-6 py-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  用户名
-                </th>
-                <th className="text-left px-6 py-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  应用分区数
-                </th>
-                <th className="text-left px-6 py-3 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  分区列表
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                <td className="px-6 py-4 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {adminUser.username}
-                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
-                    管理员
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-primary)' }}>
-                  {storageStats.find((s) => s.username === adminUser.username)?.apps?.length || 0}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-wrap gap-2">
-                    {storageStats.find((s) => s.username === adminUser.username)?.apps?.map((app) => (
-                      <span
-                        key={app.appId}
-                        className="text-xs px-2 py-1 rounded-full"
-                        style={{
-                          backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                          color: '#f59e0b',
-                        }}
-                      >
-                        {app.appName} ({app.keyCount})
-                      </span>
-                    )) || (
-                      <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        暂无应用分区
-                      </span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* User Partitions Detail */}
+      {/* All Users Storage Detail */}
       <div
         className="rounded-2xl overflow-hidden"
         style={{
@@ -262,9 +196,10 @@ export default function StorageView() {
           border: '1px solid var(--border-color)',
         }}
       >
-        <div className="px-6 py-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
+        <div className="px-6 py-4 flex items-center gap-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <Shield className="w-4 h-4" style={{ color: '#f59e0b' }} />
           <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-            普通用户应用分区详情
+            用户存储详情
           </h2>
         </div>
         <table className="w-full">
@@ -282,9 +217,12 @@ export default function StorageView() {
             </tr>
           </thead>
           <tbody>
-            {regularUsers.length > 0 ? (
-              regularUsers.map((user) => {
+            {allUsers.length > 0 ? (
+              allUsers.map((user) => {
                 const userStats = storageStats.find((s) => s.username === user.username);
+                const roleLabel = user.role === 'owner' ? '站长' : user.role === 'admin' ? '管理员' : '普通用户';
+                const roleColor = user.role === 'owner' ? '#f59e0b' : user.role === 'admin' ? '#8b5cf6' : '#10b981';
+                const roleBg = user.role === 'owner' ? 'rgba(245, 158, 11, 0.2)' : user.role === 'admin' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)';
                 return (
                   <tr
                     key={user.userId}
@@ -293,6 +231,9 @@ export default function StorageView() {
                   >
                     <td className="px-6 py-4 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                       {user.username}
+                      <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: roleBg, color: roleColor }}>
+                        {roleLabel}
+                      </span>
                     </td>
                     <td className="px-6 py-4 text-sm" style={{ color: 'var(--text-primary)' }}>
                       {userStats?.apps?.length || 0}
@@ -325,7 +266,7 @@ export default function StorageView() {
             ) : (
               <tr>
                 <td colSpan={3} className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  暂无普通用户
+                  暂无用户
                 </td>
               </tr>
             )}

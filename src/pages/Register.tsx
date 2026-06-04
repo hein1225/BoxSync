@@ -129,7 +129,7 @@ export default function Register() {
           </div>
 
           <button
-            onClick={() => navigate('/admin/login')}
+            onClick={() => window.close()}
             className="w-full py-3 rounded-xl text-sm font-medium transition-all duration-200"
             style={{
               backgroundColor: 'var(--bg-input)',
@@ -137,7 +137,7 @@ export default function Register() {
               border: '1px solid var(--border-color)',
             }}
           >
-            返回管理员登录
+            关闭页面
           </button>
         </div>
       </div>
